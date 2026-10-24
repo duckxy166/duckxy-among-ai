@@ -89,7 +89,7 @@ function apply(e) {
         svg('circle', { r: 13, fill: x.hex }, q.dot);
         svg('text', { y: 30 }, q.dot).textContent = x.name;
         q.row = node('div', 'player');
-        q.row.style.borderColor = x.hex;
+        q.row.style.borderLeftColor = x.hex;
         q.row.append(node('span', `role ${x.role}`, x.role), node('b', '', x.name), node('small', '', x.label),
           node('p', 'status'), node('p', 'thought'), node('p', 'say'));
         q.row.onclick = () => select(x.id);
