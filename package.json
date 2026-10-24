@@ -9,6 +9,7 @@
     ".": "./src/index.js",
     "./package.json": "./package.json"
   },
+  "files": ["src", "web", "docs", "arena.config.example.json", ".env.example"],
   "type": "module",
   "license": "MIT",
   "author": "Duckxy (https://github.com/duckxy166)",
