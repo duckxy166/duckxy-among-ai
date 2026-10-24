@@ -1,0 +1,26 @@
+{
+  "_comment": "Copy to arena.config.json. Model ids change often: check each provider's model list and run `node src/cli.js check` before a real match.",
+  "language": "th",
+  "seed": null,
+  "discussionRounds": 2,
+  "revealModels": true,
+  "persistentMemory": true,
+  "logPrompts": true,
+  "rules": {
+    "impostors": 2,
+    "tasksPerPlayer": 5,
+    "killCooldown": 25,
+    "confirmEjects": true,
+    "maxGameSeconds": 900
+  },
+  "seats": [
+    { "id": "claude", "name": "Claude", "color": "orange", "provider": "anthropic", "model": "claude-opus-5-5", "label": "Claude Opus 5.5", "effort": "low", "meetingEffort": "medium" },
+    { "id": "gpt", "name": "GPT", "color": "green", "provider": "openai", "model": "gpt-5-mini", "label": "GPT-5 mini" },
+    { "id": "gemini", "name": "Gemini", "color": "blue", "provider": "gemini", "model": "gemini-3.8-flash", "label": "Gemini Flash" },
+    { "id": "deepseek", "name": "DeepSeek", "color": "cyan", "provider": "deepseek", "model": "deepseek-chat", "label": "DeepSeek" },
+    { "id": "kimi", "name": "Kimi", "color": "purple", "provider": "kimi", "model": "kimi-latest", "label": "Kimi" },
+    { "id": "grok", "name": "Grok", "color": "black", "provider": "xai", "model": "grok-4", "label": "Grok" },
+    { "id": "haiku", "name": "Haiku", "color": "yellow", "provider": "anthropic", "model": "claude-haiku-5-5", "label": "Claude Haiku 5.5", "effort": "low" },
+    { "id": "qwen", "name": "Qwen", "color": "red", "provider": "openrouter", "model": "qwen/qwen3-max", "label": "Qwen" }
+  ]
+}

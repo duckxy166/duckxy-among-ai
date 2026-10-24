@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Among AI viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header>
+    <h1>Among AI</h1>
+    <span id="clock">00:00</span>
+    <span id="tasks">tasks <meter id="bar" min="0" max="1" value="0"></meter> <span id="count">0/0</span></span>
+    <span id="alert"></span>
+    <span class="grow"></span>
+    <select id="match" aria-label="Match"></select>
+    <button id="play" aria-label="Play or pause">⏸</button>
+    <select id="speed" aria-label="Speed">
+      <option value="1">1×</option><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option>
+    </select>
+  </header>
+
+  <main>
+    <svg id="map" viewBox="0 0 1200 720" role="img" aria-label="Ship map">
+      <g id="ship"></g><g id="bodies"></g><g id="people"></g>
+    </svg>
+    <section id="players" aria-label="Players"></section>
+    <section id="memory"><h2>Memory of <span id="who">—</span></h2><ol class="lines"></ol></section>
+    <section id="log"><h2>Match log</h2><ol class="lines"></ol></section>
+  </main>
+
+  <footer>Among AI by <a href="https://github.com/duckxy166/duckxy-among-ai">Duckxy</a> · MIT</footer>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

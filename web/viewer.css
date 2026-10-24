@@ -1,0 +1,52 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1220;
+  --panel: #161c2e;
+  --line: #2a3350;
+  --text: #e6e9f2;
+  --muted: #8b95b0;
+  --thought: #c4a8ff;
+  --danger: #ff5c68;
+  font-family: system-ui, 'Segoe UI', 'Noto Sans Thai', sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: inherit; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0; font-size: 20px; }
+h2 { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-weight: 600; }
+#clock { font-variant-numeric: tabular-nums; font-weight: 600; }
+#tasks { color: var(--muted); font-size: 14px; }
+#alert { color: var(--danger); font-weight: 700; }
+.grow { flex: 1; }
+select, button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+
+main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 12px; padding: 12px 16px; }
+#map { width: 100%; height: auto; background: var(--panel); border-radius: 10px; }
+section { background: var(--panel); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+#players { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+
+.room rect { fill: #1f2742; stroke: #3c4a72; stroke-width: 2; }
+.room text { fill: var(--muted); font-size: 15px; text-anchor: middle; }
+.corridor { stroke: #252e4b; stroke-width: 24; stroke-linecap: round; }
+.person text { font-size: 13px; text-anchor: middle; fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 3px; }
+.person circle { stroke: #000; stroke-width: 2.5; }
+.person.ghost { opacity: .3; }
+
+.player { border-left: 4px solid; padding: 4px 8px; cursor: pointer; border-radius: 4px; }
+.player.selected { background: #20283f; }
+.player.out { opacity: .5; }
+.player b { margin-right: 6px; }
+.player small { color: var(--muted); }
+.player .role { float: right; font-size: 12px; color: var(--muted); }
+.player .role.impostor { color: var(--danger); }
+.player p { margin: 2px 0 0; font-size: 13px; }
+.thought { color: var(--thought); font-style: italic; }
+
+.lines { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.lines .t { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.lines .hot { color: #ffb0b6; }
+.lines .thought { display: block; margin-left: 16px; }
+footer { padding: 8px 16px 16px; color: var(--muted); font-size: 13px; }

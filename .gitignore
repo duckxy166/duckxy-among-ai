@@ -1,0 +1,18 @@
+node_modules/
+
+# API keys and your own seat config
+.env
+arena.config.json
+
+# Match logs and cross-match memories are generated per machine
+matches/
+memory/**
+!memory/README.md
+
+# Never commit game files
+*.zip
+Among Us*/
+AmongUsItch/
+
+.DS_Store
+Thumbs.db
