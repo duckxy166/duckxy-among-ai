@@ -1,6 +1,7 @@
 # Plan: the same brains in the real Among Us
 
-Status: **feasibility checked 2026-10-25 (step 1 done), no bridge code yet.** Everything in this
+Status: **2026-10-25: BepInEx runs on our build, upstream AUBridge is ported (3 renames) and two copies
+meet in one local lobby. No bridge adapter in this repository yet.** Everything in this
 repository runs on its own simulator. This page is the plan for a second body: real game clients driven
 through a mod, with the brain layer unchanged.
 
@@ -52,20 +53,44 @@ So a bridge adapter only has to turn those events into `obs` lines and expose `v
 | A test plugin: Harmony postfix on `MainMenuManager.Start`, injected `MonoBehaviour` with `Update()` | yes: the patch runs, the injected component ticks every frame on the main thread, `AmongUsClient.Instance.NetworkMode` reads `LocalGame` |
 | Reactor 2.5.1 (officially "Among Us 16.0.5 up to 17.4") | loads without errors, reports `Among Us 2026.9.29 itch.io`, finds all its coroutine hooks |
 | Two modded copies at once from the same folder | yes: both reach the main menu, BepInEx writes `LogOutput.log` and `LogOutput.1.log`. **Not yet tested:** one copy hosting a local lobby and the other joining it |
-| Upstream AUBridge compiled against this build's interop (+ Reactor 2.5.1) | 19 errors, all in three places: `MeetingHud.VoteStates` and `PlayerVoteArea.TargetPlayerId` (meeting voting; `PlayerVoteArea` now exposes `TargetPlayer`) and `NormalGameOptionsV10` → `NormalGameOptionsV12` (lobby options). Movement, tasks, kills, vents, sabotage, chat, events, reflexes and the TCP bridge compile unchanged |
+| Upstream AUBridge compiled against this build's interop (+ Reactor 2.5.1) | 19 errors, all in three places: meeting voting (`MeetingHud.VoteStates`, `PlayerVoteArea.TargetPlayerId`) and lobby options (`NormalGameOptionsV10`). Movement, tasks, kills, vents, sabotage, chat, events, reflexes and the TCP bridge compile unchanged |
 
-Conclusion: modding the itch build works. Porting AUBridge is a small, local change (voting and lobby
-options); the open risks are running a local lobby with 6 to 8 copies on one PC and real-time play.
+## AUBridge port and lobby test (2026-10-25)
+
+The port is three renames, each checked against the decompiled interop (`ilspycmd`):
+
+| Upstream (Epic 2026.6.5) | Itch 2026.9.29 |
+|---|---|
+| `MeetingHud.VoteStates` | `MeetingHud.MeetingStates`, same members in the same order (Animating, Discussion, NotVoted, Voted, Results, Proceeding) |
+| `PlayerVoteArea.TargetPlayerId` (byte) | `PlayerVoteArea.PlayerId` of type `InnerNet.PlayerId`: a struct around `byte Value` with implicit conversions both ways |
+| `NormalGameOptionsV10` | `NormalGameOptionsV12` (`GameOptionsManager.normalGameHostOptions` and `currentNormalGameOptions` are V12). Besides the one compile error, `HostOptions()` used `TryCast<NormalGameOptionsV10>()`, which compiles but would return null at runtime on this build, so every V10 use moved to V12 |
+
+Result: 0 errors, 0 warnings. At runtime on this build:
+
+| Check | Result |
+|---|---|
+| AUBridge 0.4.1 loads with Reactor 2.5.1 | yes; all 10 Harmony hooks attach (`PMurder`, `PStartMeeting`, `PChat`, `PGameEnd`, `PVotingComplete`, `PCastVote`, `PVentEnter`, `PVentExit`, `PPhysics`, `PJoyKey`) |
+| Copy 1 `--aub-mode=host`, no clicks | suppresses the guest-account popup, opens Local, presses Host: in its lobby 15 s after launch |
+| Copy 2 `--aub-mode=join`, no clicks | finds the local game (skips a non-LAN address in the list, as designed) and joins: in the same lobby 16 s after launch |
+| Bridge `state` on 47001 and 47002 | both `scene=OnlineGame`, `stage=lobby`, players `Host` (red, colour 0) and `Joiner` (blue, colour 1) with correct `isLocal` |
+
+Notes: the bridge only starts with `--aub-token=` of 16 or more characters, and every request must carry
+`"token"`. The joining copy logged one `NullReferenceException` inside the detoured
+`PlayerControl.HandleRpc` while joining (AUBridge does not patch that method; Reactor's detour is the
+likely path). It did not stop the join; watch for it in the full-game test.
+
+Conclusion: the itch build can be driven by AUBridge with a three-rename port, and two copies on one PC
+reach one local lobby with no clicks and no Sandboxie. Still open: a full round (start, move, task, kill,
+report, vote), 6 to 8 copies at once, and real-time play.
 
 ## Steps
 
 1. ~~Read the game version of the itch build and check whether BepInEx 6 IL2CPP (x86) and Reactor run
    on it.~~ Done 2026-10-25, see the table above.
-2. Build AUBridge from upstream against this build's interop assemblies: fix the 19 errors (voting,
-   lobby options), re-checking every replacement against the decompiled `Assembly-CSharp` (never guess
-   names), then test one copy hosting and another joining a local lobby.
-3. Bring up 3 copies in one local lobby; script `move_to → do_task → kill → report → vote` through the
-   bridge (upstream's own acceptance test).
+2. ~~Build AUBridge from upstream against this build's interop assemblies and test one copy hosting
+   and another joining a local lobby.~~ Done 2026-10-25, see above.
+3. Bring up 3 copies in one local lobby; script `configure → start → move_to → do_task → kill → report →
+   vote` through the bridge (upstream's own acceptance test).
 4. Write `src/bridge/` here: one client per seat, events → `obs`, `view()`, `legalActions()`, `act()`,
    and a real-time runner loop with reflexes.
 5. Run 8 copies with mock brains, then with real models.
