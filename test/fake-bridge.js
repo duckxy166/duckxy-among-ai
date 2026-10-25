@@ -9,12 +9,19 @@ const TASKS = [
   { name: 'FixWiring', room: 'Electrical' }, { name: 'SwipeCard', room: 'Admin' },
   { name: 'SubmitScan', room: 'MedBay' }, { name: 'StabilizeSteering', room: 'Nav' },
 ];
+const VENTS = [
+  { id: 0, room: 'Cafeteria', to: [1] }, { id: 1, room: 'Admin', to: [0] },
+  { id: 3, room: 'Electrical', to: [6] }, { id: 6, room: 'MedBay', to: [3] },
+];
+const ventExits = (v) => v.to.map((id) => ({ id, room: VENTS.find((x) => x.id === id).room }));
 
-export async function startFakeShip({ names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300 }) {
-  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, t0: Date.now(), calls: [], sockets: new Set() };
+// impostor: one name or a list. sabotageCooldown: what `state` reports while no sabotage is on (99
+// keeps the mock brains from sabotaging).
+export async function startFakeShip({ names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300, sabotageCooldown = 99 }) {
+  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, sabotage: null, t0: Date.now(), calls: [], sockets: new Set() };
   const now = () => (Date.now() - ship.t0) / 1000;
   const players = names.map((name, i) => ({
-    name, i, role: 'crewmate', alive: true, room: 'Cafeteria', tasks: [], seenBodies: new Set(), events: [], seq: 0, waiters: [],
+    name, i, role: 'crewmate', alive: true, room: 'Cafeteria', vent: null, tasks: [], seenBodies: new Set(), events: [], seq: 0, waiters: [],
   }));
   const byName = (n) => players.find((p) => p.name === n);
   const isImp = (p) => p.role === 'impostor';
@@ -27,7 +34,7 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     w.forEach((f) => f());
   };
   const all = (type, fields) => players.forEach((p) => push(p, type, fields));
-  const near = (p) => players.filter((o) => o !== p && o.alive && o.room === p.room);
+  const near = (p) => players.filter((o) => o !== p && o.alive && !o.vent && o.room === p.room);
   const later = (fn) => setTimeout(fn, stepMs);
 
   function moveTo(p, room) {
@@ -152,6 +159,39 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
         ship.meeting.votes.set(p.name, a.target);
         resolveVotes();
         return ok();
+      case 'sabotage': // a ghost impostor may sabotage too, as in the mod
+        if (!isImp(p)) return err('only an impostor can sabotage');
+        if (ship.sabotage) return err('a sabotage is already active');
+        ship.sabotage = a.type;
+        all('sabotage', { type: a.type });
+        return { ...ok(), type: a.type };
+      case 'vent': {
+        if (!isImp(p) || !p.alive) return err('you cannot use vents');
+        if (a.to !== undefined) {
+          const v = p.vent && VENTS.find((x) => x.id === Number(a.to) && p.vent.to.includes(x.id));
+          if (!v) return err('no such neighbouring vent (left|right|center|id)');
+          // The game's own refusal while the jump into the vent is still animating.
+          if (Date.now() - p.ventAt < 150) return err('vent move failed: Player was still in the middle of animating into current vent; not allowed to move vents that fast');
+          p.vent = v;
+          p.room = v.room;
+          push(p, 'room_changed', { room: v.room });
+          return { ...ok(), vent: v.id };
+        }
+        if (a.enter === false) {
+          if (!p.vent) return err('not in a vent');
+          const id = p.vent.id;
+          p.vent = null;
+          for (const o of near(p)) push(o, 'saw_vent', { name: p.name, vent: id, action: 'exit' });
+          return { ...ok(), exit: id };
+        }
+        if (p.vent) return err('already in a vent');
+        const v = VENTS.find((x) => x.room === p.room);
+        if (!v) return err('no usable vent in reach');
+        for (const o of near(p)) push(o, 'saw_vent', { name: p.name, vent: v.id, action: 'enter' });
+        p.vent = v;
+        p.ventAt = Date.now();
+        return { ...ok(), enter: v.id };
+      }
       default:
         return err(`unknown action: ${a.do}`);
     }
@@ -168,13 +208,19 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
         phase: ship.over ? 'ended' : ship.phase, intro: false, canMove: ship.phase === 'tasks' && p.alive,
         me: {
           name: p.name, color: p.i, alive: p.alive, role: p.alive ? p.role : (imp ? 'ghost_imp' : 'ghost_crew'),
-          pos: [0, 0], room: p.room, killCooldown: 0, killRange: imp ? 1.5 : 0, partner: null,
+          pos: [0, 0], room: p.room, killCooldown: 0, killRange: imp ? 1.5 : 0, inVent: !!p.vent,
+          partner: imp ? players.find((o) => o !== p && isImp(o))?.name ?? null : null,
         },
         tasks: p.tasks.map((t) => ({ id: t.id, name: t.name, room: t.room, done: !!t.done, ...(t.fake ? { fake: true } : {}) })),
         taskBar: crewTasks.length ? crewTasks.filter((t) => t.done).length / crewTasks.length : 0,
         visible: p.alive ? near(p).map((o) => ({ name: o.name, color: o.i, pos: [1, 0], room: o.room, alive: true, distance: 1, inVent: false })) : [],
         bodies: ship.bodies.filter((b) => b.room === p.room).map((b) => ({ name: b.name, color: 0, pos: [0, 1], room: b.room, distance: 0.5 })),
-        sabotage: { active: null, timer: 0, cooldown: 99 },
+        sabotage: { active: ship.sabotage, timer: 0, cooldown: imp && !ship.sabotage ? sabotageCooldown : 0 },
+        // Like the mod: vents in view with where they lead, plus the one the impostor is inside.
+        vents: imp && p.alive ? [
+          ...VENTS.filter((v) => v.room === p.room).map((v) => ({ id: v.id, pos: [2, 2], room: v.room, distance: 1, to: ventExits(v) })),
+          ...(p.vent ? [{ current: p.vent.id, to: ventExits(p.vent) }] : []),
+        ] : [],
         meeting: ship.meeting ? { caller: ship.meeting.caller, reportedBody: ship.meeting.body } : null,
         busy: 'idle',
       },
@@ -187,7 +233,7 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     ship.phase = 'tasks';
     ship.t0 = Date.now();
     for (const p of players) {
-      if (p.name === impostor) p.role = 'impostor';
+      if ([impostor].flat().includes(p.name)) p.role = 'impostor';
       p.tasks = Array.from({ length: tasksPerPlayer }, (_, k) => ({ id: k, ...TASKS[(p.i + k) % TASKS.length] }));
       push(p, 'game_started', { role: p.role, partner: null, tasks: p.tasks.length });
     }

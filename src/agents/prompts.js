@@ -48,14 +48,14 @@ export const SCHEMAS = {
   },
 };
 
-// realGame: the players are in the real Among Us (src/bridge), where time does not stop, the chat
-// has a 100-character limit and the bridge offers no vent actions yet.
+// realGame: the players are in the real Among Us (src/bridge), where time does not stop and the chat
+// has a 100-character limit.
 export function systemPrompt({ me, role, partners, roster, rules, impostorCount, language, persona, longTerm, revealModels, realGame = false }) {
   const players = roster
     .map((s) => `- ${s.name} (${s.color}${revealModels && s.label ? `, played by ${s.label}` : ''})${s.id === me.id ? '  <- you' : ''}`)
     .join('\n');
   const roleText = role === 'impostor'
-    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you two know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, ${realGame ? '' : 'use vents, '}sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill${realGame ? '' : ' or a vent'} can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
+    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you two know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, use vents, sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill or a vent can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
     : `CREWMATE. You win when every task is done or every Impostor is voted out. ${impostorCount} Impostor${impostorCount > 1 ? 's are' : ' is'} hiding among the players. Do your tasks, watch who goes where, and catch the liars.`;
 
   return `You are ${me.name}, a player in AMONG AI: an Among Us-style social deduction match where every player is a different AI model. Play to win and stay in character for the whole match.
@@ -99,12 +99,14 @@ const REASONS = {
   lost_sight: 'you lost the player you were following',
   meeting_over: 'the meeting just ended and everyone is back in Cafeteria',
   stuck: 'you got stuck on the way',
+  sabotage_ready: 'your sabotage is ready again',
 };
 
 export function roamPrompt(view, memory) {
   const out = [];
   out.push(`[${clock(view.t)}] FREE ROAM. You are ${view.walking ? `walking ${view.location}` : `in ${view.location}`}.`);
   out.push(`You are deciding now because ${REASONS[view.reason] ?? view.reason}.`);
+  if (view.dead) out.push('You are DEAD: a ghost nobody sees or hears. An Impostor ghost can still sabotage to help a living partner.');
   if (view.lightsOut) out.push(view.role === 'crew' ? 'LIGHTS ARE OUT: you only see shadows in your own room.' : 'Lights are out for the crewmates (you still see normally).');
   if (view.sabotage?.kind === 'reactor') out.push(`REACTOR MELTDOWN in ${view.sabotage.secondsLeft}s unless two players hold the panels in Reactor.`);
   const seen = view.visible.map((v) => `${v.name} (${v.where}, ${v.doing})`);
