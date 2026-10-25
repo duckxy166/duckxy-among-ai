@@ -137,8 +137,11 @@ export async function runMatch({ config, seats, providers, matchId, dir, memoryD
         const results = await Promise.all(pending.map((p, i) => agents.get(p.id).decideRoam(views[i])));
         pending.forEach((p, i) => {
           const r = results[i];
-          emit({ type: 'decision', t: game.t, p: p.id, reason: views[i].reason, thought: r.thought, action: r.action, raw: r.raw, note: r.note, error: r.error, ms: r.ms, model: r.model });
-          if (game.phase === 'roam' && p.alive) game.act(p.id, r.action);
+          emit({ type: 'decision', t: game.t, p: p.id, reason: views[i].reason, thought: r.thought, action: r.action, raw: r.raw, say: r.say, note: r.note, error: r.error, ms: r.ms, model: r.model });
+          if (game.phase === 'roam' && p.alive) {
+            game.speak(p.id, r.say); // said where they stand, before the order moves them
+            game.act(p.id, r.action);
+          }
           flush();
         });
         if (game.phase !== 'roam') continue;

@@ -33,6 +33,9 @@ export function matchName(raw, names, keywords = []) {
   return names.find((x) => norm(x) === n) ?? longestFirst.find((x) => n.includes(norm(x))) ?? null;
 }
 
+// Fields a reply may leave out (read as an empty string): `say` is newer than some scripted or custom brains.
+const OPTIONAL = new Set(['say']);
+
 export function parseJson(text, schema) {
   if (!text) return null;
   const body = String(text).replace(/```(?:json)?/gi, '');
@@ -44,8 +47,9 @@ export function parseJson(text, schema) {
   if (!data || typeof data !== 'object') return null;
   const out = {};
   for (const key of Object.keys(schema.properties)) {
-    if (data[key] === undefined || data[key] === null) return null;
-    out[key] = String(data[key]);
+    const missing = data[key] === undefined || data[key] === null;
+    if (missing && !OPTIONAL.has(key)) return null;
+    out[key] = missing ? '' : String(data[key]);
   }
   return out;
 }
@@ -111,9 +115,10 @@ export class Agent {
     }
     const thought = clip(r.data?.secret_thought, 500);
     const note = clip(r.data?.note, 200);
+    const said = clip(r.data?.say, 120);
     this.memory.thought(view.t, 'roam', thought);
     this.memory.note(view.t, note);
-    return { action, raw: r.data?.action ?? null, thought, note, error: r.error, ms: r.ms, model: r.model };
+    return { action, raw: r.data?.action ?? null, thought, say: said, note, error: r.error, ms: r.ms, model: r.model };
   }
 
   async speak(meeting, transcript, round, rounds) {

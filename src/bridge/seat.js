@@ -38,6 +38,8 @@ export class BridgeSeat {
     this.buffered = [];
     this.emergencies = match.rules.emergencyMeetings ?? 1;
     this.lastChance = { name: null, at: -99 };
+    this.talkWokeAt = -Infinity;
+    this.spokeTo = new Map(); // name -> when this seat last named them out loud
   }
 
   // ------------------------------------------------------------------ plumbing
@@ -378,6 +380,18 @@ export class BridgeSeat {
     const send = (args) => this.client.act(args);
     let r;
     let plan = null;
+    // The job the body is already doing (asked again after a wake-up, e.g. someone spoke): carry on.
+    // Sending it again would make the copy restart the walk and the wait for that task or panel. A
+    // fixer the ledger moves to the other reactor panel (its own is covered, the other is empty) is
+    // sent there.
+    const p = this.plan;
+    const same = p && ((p.kind === 'task' && (verb === 'task' || verb === 'fake') && p.task === arg)
+      || (p.kind === 'fix' && verb === 'fix' && p.type === this.state?.sabotage?.active
+        && p.panel === this.match.ledger.reactorPanel(this.id, p.type)));
+    if (same) {
+      p.stale = false;
+      return { ok: true };
+    }
     switch (verb) {
       case 'wait':
         r = await send({ do: 'stay' });
@@ -391,7 +405,7 @@ export class BridgeSeat {
       case 'task':
       case 'fake':
         r = await send({ do: 'do_task', id: Number(arg) });
-        plan = { kind: 'task', moving: true, until: now + 90 };
+        plan = { kind: 'task', task: arg, moving: true, until: now + 90 };
         break;
       case 'follow':
         r = await send({ do: 'follow', target: arg, distance: 1.5 });
@@ -403,9 +417,10 @@ export class BridgeSeat {
         break;
       case 'fix': {
         const type = this.state?.sabotage?.active;
-        r = await send({ do: 'fix', type, id: this.match.ledger.reactorPanel(this.id, type) });
+        const panel = this.match.ledger.reactorPanel(this.id, type);
+        r = await send({ do: 'fix', type, id: panel });
         if (!r.ok) this.match.ledger.releasePanel(this.id); // no fix plan ever held it
-        plan = { kind: 'fix', moving: true, until: now + 90 };
+        plan = { kind: 'fix', type, panel, moving: true, until: now + 90 };
         break;
       }
       case 'report':

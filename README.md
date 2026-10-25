@@ -18,6 +18,11 @@ Open source under MIT. Please keep the credit (see [Credit](#credit)).
 - **Two voices.** Every reply has a `secret_thought` (the real plan, the lie being prepared) and a public
   part (the action, the chat line, the vote). Players never see each other's thoughts; the event log and
   the viewer keep both, so you can watch an AI lie with a straight face.
+- **Talking on the ship.** Outside meetings a player can say something out loud, and only the players
+  who can see it at that moment hear it (in the dark, a voice from a shadow). The speaker's memory says
+  who heard and who was out of earshot, so it can walk over and ask again; a player who is named or
+  answered gets to reply. That is how they split up a sabotage ("I'll fix lights, you keep doing tasks"),
+  check alibis, or lie to someone's face.
 - **Many models, one match.** Each seat is a different model and provider. Game time stands still while
   a model thinks, so a slow model is never punished for latency, and a match replays from its seed.
 - **Memory across matches.** After a match every model writes a note to its future self ("GPT lied about
@@ -118,7 +123,7 @@ The engine (`src/engine/`) is the body: it walks players around a Skeld-like shi
 a time, decides who can see whom, and writes what each player saw into that player's memory. The brains
 (`src/agents/`) only get a view of their own surroundings, their own memory log, notes and past thoughts,
 and a list of legal actions. They are asked to decide only at decision points (a task finished, a body
-found, a kill witnessed, a sabotage, a kill opportunity), not every second, which keeps the cost down.
+found, a kill witnessed, a sabotage, a kill opportunity, someone talking to them), not every second, which keeps the cost down.
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 In a 2-minute mock match with one meeting the 8 players made 88 calls; system prompts are about
@@ -200,6 +205,7 @@ is built against your own copy of the game); the simulator's map is drawn from s
   เช่น `[01:10] เห็น Gemini ที่ Electrical` แล้วใช้เป็นหลักฐาน/ข้อแก้ตัวตอนประชุม ไม่มีใครอ่านความจำของคนอื่นได้ (มีเทสต์ตรวจ)
 - **ความคิดในใจ vs คำพูดจริง** — ทุกคำตอบต้องมี `secret_thought` (แผนจริง คำโกหกที่กำลังเตรียม) แยกจากสิ่งที่ทำ/พูด/โหวต
   ผู้เล่นไม่เห็นความคิดกัน แต่ log และหน้า viewer เก็บไว้ทั้งสองอย่าง
+- **คุยกันระหว่างเดิน** — นอกห้องประชุมพูดได้ แต่คนที่ได้ยินมีแค่คนที่มองเห็นตัวคนพูดตอนนั้น (ไฟดับได้ยินแค่เสียงจากเงา ไม่รู้ว่าใคร) คนพูดรู้ว่าใครได้ยิน และใครไม่อยู่ในระยะ จะได้เดินไปถามต่อ คนที่ถูกเรียกชื่อหรือถูกตอบจะได้ตอบกลับ ใช้แบ่งงานตอน sabotage ถามหา alibi หรือโกหกต่อหน้า
 - **หลายโมเดลในแมตช์เดียว** — เวลาในเกมหยุดระหว่างที่ AI คิด โมเดลที่ช้าจึงไม่เสียเปรียบ และเล่นซ้ำได้จาก seed
 - **จำข้ามแมตช์** — จบเกมแต่ละตัวเขียนโน้ตถึงตัวเองเกมหน้า (ใครโกหก ใครไว้ใจได้)
 - **หน้า viewer** ในเบราว์เซอร์ ดูแผนที่ ความคิดล่าสุดของทุกคน และความจำของผู้เล่นที่เลือก ทั้งสดและย้อนหลัง
