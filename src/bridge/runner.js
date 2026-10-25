@@ -12,7 +12,7 @@ import { Agent, FatalSeatError } from '../agents/agent.js';
 import { systemPrompt } from '../agents/prompts.js';
 import { loadLongTerm, appendLongTerm } from '../agents/memory.js';
 import { BOARD, ROOMS, EDGES, VENT_GROUPS, COLORS } from '../engine/map.js';
-import { DEFAULT_RULES } from '../engine/game.js';
+import { DEFAULT_RULES, mentions } from '../engine/game.js';
 import { say, clock } from '../i18n.js';
 import { BridgeSeat, sleep, until } from './seat.js';
 
@@ -146,6 +146,34 @@ export async function runBridgeMatch({
     resolveOver();
   }
 
+  // ---------------------------------------------------------------- talking on the ship
+
+  // A line said out loud during free roam. The real game has no chat outside meetings, so the line only
+  // travels through memories and the event log: every copy that shows the speaker hears it. The rules
+  // are the simulator's (Game.speak): the speaker learns who heard and who they named was out of earshot,
+  // and a listener who is named, answered, or hears it during a sabotage is woken to react.
+  function relaySay(s, text) {
+    const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (!line || match.meeting || match.over || !s.alive) return;
+    const t = now();
+    const ears = list.filter((o) => o !== s && o.alive && o.seen.has(s.name));
+    const missed = list.filter((o) => o !== s && !ears.includes(o) && mentions(line, o.name));
+    emit({ type: 'say', p: s.id, text: line, room: s.room, heard: ears.map((o) => o.id), anon: [], missed: missed.map((o) => o.id) });
+    for (const o of ears) {
+      const named = mentions(line, o.name);
+      const answer = t - (o.spokeTo.get(s.name) ?? -Infinity) <= rules.replySeconds;
+      if (named) s.spokeTo.set(o.name, t);
+      o.note(t, 'heard', 'heard', { name: s.name, text: line }, { data: { who: s.name, text: line, room: o.room, toMe: named || answer } });
+      if ((named || answer || match.sabotage) && t - o.talkWokeAt >= rules.talkWakeSeconds && !o.needs) {
+        o.talkWokeAt = t;
+        o.wake('heard');
+      }
+    }
+    const who = [ears.length ? say(match.lang, 'said_heard', { list: ears.map((o) => o.name).join(', ') }) : say(match.lang, 'said_nobody')];
+    if (missed.length) who.push(say(match.lang, 'said_missed', { list: missed.map((o) => o.name).join(', ') }));
+    s.note(t, 'you_said', 'you_said', { text: line, who: who.join('; ') }, { data: { text: line, heard: ears.map((o) => o.name), missed: missed.map((o) => o.name) } });
+  }
+
   // ---------------------------------------------------------------- one seat's decisions
 
   async function seatLoop(s) {
@@ -164,8 +192,9 @@ export async function runBridgeMatch({
         const view = s.view(why);
         emit({ type: 'thinking', players: [s.id] });
         const r = await agent.decideRoam(view);
-        emit({ type: 'decision', p: s.id, reason: why, thought: r.thought, action: r.action, raw: r.raw, note: r.note, error: r.error, ms: r.ms, model: r.model });
+        emit({ type: 'decision', p: s.id, reason: why, thought: r.thought, action: r.action, raw: r.raw, say: r.say, note: r.note, error: r.error, ms: r.ms, model: r.model });
         if (match.meeting || match.over || !s.alive) continue;
+        relaySay(s, r.say); // said where they stand, before the order moves them
         await s.execute(r.action);
       } catch (e) {
         if (e instanceof FatalSeatError) { fail(e); break; }

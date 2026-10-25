@@ -33,6 +33,8 @@ export class BridgeSeat {
     this.buffered = [];
     this.emergencies = match.rules.emergencyMeetings ?? 1;
     this.lastChance = { name: null, at: -99 };
+    this.talkWokeAt = -Infinity;
+    this.spokeTo = new Map(); // name -> when this seat last named them out loud
   }
 
   // ------------------------------------------------------------------ plumbing

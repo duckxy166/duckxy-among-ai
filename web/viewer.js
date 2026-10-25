@@ -156,6 +156,11 @@ function apply(e) {
       p.thought = clean(e.thought);
       render(p);
       break;
+    case 'say':
+      p.say = e.text;
+      render(p);
+      log(e.t, `${p.name} → ${e.heard.map(nameOf).join(', ') || 'nobody heard'}: "${e.text}"`);
+      break;
     case 'vote_result': {
       const votes = S.events.filter((v) => v.type === 'vote' && v.seq < e.seq && v.seq > (S.lastResult ?? -1));
       S.lastResult = e.seq;

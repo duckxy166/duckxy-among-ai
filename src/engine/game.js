@@ -22,10 +22,19 @@ export const DEFAULT_RULES = {
   maxGameSeconds: 900,
   doorwaySeconds: 1.5, // how long someone stays visible from the room they just left
   followSeconds: 20,
+  talkWakeSeconds: 5, // a spoken line wakes the same listener at most this often
+  replySeconds: 20, // a line from someone you just spoke to counts as their answer to you
 };
 
 const sameCorridor = (a, b) =>
   (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
+
+// Does `text` name `name`? Latin letters around it make it part of another word ("covered" is not
+// "Red"); Thai written right after a name ("Redไปไหน") still counts.
+export function mentions(text, name) {
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, 'i').test(String(text ?? ''));
+}
 
 export class Game {
   constructor({ seats, rng, rules = {}, language = 'th' }) {
@@ -43,6 +52,7 @@ export class Game {
     this.meeting = null;
     this.meetingCount = 0;
     this.publicDead = new Set();
+    this.talkWakes = new Set();
 
     const n = seats.length;
     const impostors = this.rules.impostors ?? (n <= 6 ? 1 : 2);
@@ -66,6 +76,8 @@ export class Game {
       opportunity: '',
       movedAt: -1,
       arrivedAt: -1,
+      talkWokeAt: -Infinity,
+      spokeTo: new Map(), // listener id -> when this player last named them out loud
     }));
   }
 
@@ -245,6 +257,11 @@ export class Game {
     for (const p of this.players) if (p.killCd > 0) p.killCd -= 1;
     if (this.sabotageCd > 0) this.sabotageCd -= 1;
     if (this.emergencyCd > 0) this.emergencyCd -= 1;
+    for (const id of this.talkWakes) {
+      const l = this.byId(id);
+      if (l.alive && !l.needs) l.needs = 'heard';
+    }
+    this.talkWakes.clear();
 
     const arrived = new Set();
     for (const p of this.players) {
@@ -365,7 +382,9 @@ export class Game {
     const cut = actionId.indexOf(':');
     const verb = cut < 0 ? actionId : actionId.slice(0, cut);
     const arg = cut < 0 ? '' : actionId.slice(cut + 1);
-    p.busy = null; // a new order replaces whatever the body was doing
+    // A new order replaces whatever the body was doing; the same job (asked again after a wake-up) carries on.
+    const same = p.busy && (p.busy.kind === 'fix' ? verb === 'fix' : p.busy.kind === verb && p.busy.task === arg);
+    if (!same) p.busy = null;
     this.emit({ type: 'intent', p: p.id, action: actionId });
     switch (verb) {
       case 'wait': p.intent = { kind: 'wait', left: Number(arg) }; break;
@@ -562,6 +581,45 @@ export class Game {
     for (const p of by) if (p.intent?.kind === 'fix') this.finish(p);
   }
 
+  // A line said out loud during free roam. Whoever can see the speaker hears it (crewmates in the dark
+  // hear a voice from a shadow). The speaker learns who heard, and that someone they named was out of
+  // earshot, so they can go and find them. A listener who is named, who is being answered, or who hears
+  // it during a sabotage gets to react; the wake-up waits for the next second so the listener's own
+  // order from this round of decisions does not swallow it.
+  speak(id, text) {
+    const p = this.byId(id);
+    const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+    if (!p?.alive || this.phase !== 'roam' || !line) return;
+    const ears = this.living().map((l) => ({ l, s: this.canSee(l, p) })).filter((x) => x.s);
+    const blind = this.sabotage?.kind === 'lights' && p.role === 'crew';
+    const missed = blind ? [] : this.players.filter((o) => o !== p && !ears.some((x) => x.l === o) && mentions(line, o.name));
+    this.emit({
+      type: 'say', p: p.id, text: line, room: this.where(p),
+      heard: ears.map((x) => x.l.id), anon: ears.filter((x) => x.s === 'anon').map((x) => x.l.id), missed: missed.map((o) => o.id),
+    });
+
+    for (const { l, s } of ears) {
+      const named = mentions(line, l.name);
+      const answer = this.t - (l.spokeTo.get(p.id) ?? -Infinity) <= this.rules.replySeconds;
+      if (named) p.spokeTo.set(l.id, this.t);
+      const data = { who: s === 'named' ? p.name : null, text: line, room: l.room ?? null, toMe: named || answer };
+      if (s === 'named') this.note(l, 'heard', 'heard', { name: p.name, text: line }, { data });
+      else this.note(l, 'heard', 'heard_dark', { text: line }, { data });
+      if ((named || answer || this.sabotage) && this.t - l.talkWokeAt >= this.rules.talkWakeSeconds) {
+        l.talkWokeAt = this.t;
+        this.talkWakes.add(l.id);
+      }
+    }
+
+    const names = ears.filter((x) => this.canSee(p, x.l) === 'named').map((x) => x.l.name);
+    const shadows = ears.length - names.length;
+    const parts = [...names];
+    if (shadows) parts.push(say(this.lang, 'shadows', { n: shadows }));
+    const who = [parts.length ? say(this.lang, 'said_heard', { list: parts.join(', ') }) : say(this.lang, 'said_nobody')];
+    if (missed.length) who.push(say(this.lang, 'said_missed', { list: missed.map((o) => o.name).join(', ') }));
+    this.note(p, 'you_said', 'you_said', { text: line, who: who.join('; ') }, { data: { text: line, heard: names, missed: missed.map((o) => o.name) } });
+  }
+
   // ---------------------------------------------------------------- meetings
 
   startMeeting(callerId, bodyId) {
@@ -579,6 +637,7 @@ export class Game {
       newlyDead: newlyDead.map((p) => p.id),
     };
     this.bodies = [];
+    this.talkWakes.clear();
     if (this.sabotage?.kind === 'reactor') {
       this.sabotage = null;
       this.emit({ type: 'sabotage_fixed', kind: 'reactor', by: [] });

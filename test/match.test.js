@@ -28,8 +28,19 @@ test('an 8-player mock match plays to the end and writes its files', async () =>
   const stats = r.events.at(-1);
   assert.equal(stats.type, 'stats');
   assert.ok(Object.values(stats.seats).every((s) => s.calls > 0));
-  const roles = r.events.find((e) => e.type === 'match_start').players.map((p) => p.role);
-  assert.equal(roles.filter((x) => x === 'impostor').length, 2);
+  const start = r.events.find((e) => e.type === 'match_start');
+  assert.equal(start.players.filter((p) => p.role === 'impostor').length, 2);
+  // Mock players talk on the ship; a line reaches exactly the players listed as hearing it.
+  const says = r.events.filter((e) => e.type === 'say');
+  assert.ok(says.length > 0);
+  const nameOf = (id) => start.players.find((p) => p.id === id).name;
+  for (const s of says) {
+    for (const [id, a] of r.agents) {
+      const who = s.anon.includes(id) ? null : nameOf(s.p);
+      const got = a.memory.entries.some((m) => m.kind === 'heard' && m.t === s.t && m.data.text === s.text && m.data.who === who);
+      assert.equal(got, s.heard.includes(id), `${id} and "${s.text}" at ${s.t}`);
+    }
+  }
 });
 
 test('the same seed replays the same match', async () => {

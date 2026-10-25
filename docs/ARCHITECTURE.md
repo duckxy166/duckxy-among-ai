@@ -34,10 +34,20 @@ own room (a kill in the dark is "a shadow killed X"). Impostors are not affected
 
 **Decision points.** Brains are not asked every second. A player is asked (`needs`) when the match
 starts, when its current order is finished, after a meeting, and when something interrupts it: finding a
-body, witnessing a kill or a vent, a sabotage, losing the player it follows, or (impostor only) being
-alone with one crewmate with the kill ready. Orders are high level (`move:Admin`, `task:scan`,
+body, witnessing a kill or a vent, a sabotage, losing the player it follows, someone talking to it (see
+below), or (impostor only) being alone with one crewmate with the kill ready. Orders are high level (`move:Admin`, `task:scan`,
 `follow:GPT`, `kill:Kimi`, `vent:Navigation`, `sabotage:lights`, `fix`, `report`, `emergency`,
 `wait:5`) and the engine carries them out over the next seconds.
+
+**Talking on the ship.** A free-roam reply has a `say` field. `Game.speak()` gives the line to every
+living player who can see the speaker right now (`canSee`; a crewmate in the dark gets "a voice in the
+dark" without the name) as a `heard` memory line, and gives the speaker a `you_said` line with who heard
+it and which named players were out of earshot (not for a crewmate in the dark, who cannot tell). A
+listener is woken (reason `heard`) when the line names it, when it is the answer of someone it spoke to
+in the last `replySeconds`, or during a sabotage; at most once per `talkWakeSeconds`, and only on the
+next second, so its own order from the same round does not swallow the wake-up. To talk to someone
+out of sight a player walks to where its log last saw them, or follows them. A player told to do the job
+it is already doing carries on instead of starting it over.
 
 **Frozen time.** The runner asks every pending brain in parallel and waits for all of them before the
 next game second. A model that takes 20 s to answer loses no game time, and a match is reproducible
@@ -60,7 +70,7 @@ Every request asks for JSON with a `secret_thought` plus the public part:
 
 | Moment | Public fields |
 |---|---|
-| Free roam | `action` (an id from the list) and `note` |
+| Free roam | `action` (an id from the list), `say` (out loud, or empty) and `note` |
 | Meeting, speaking | `chat_message` and `suspect` |
 | Meeting, voting | `vote` |
 | After the match | `lesson` (saved to `memory/<seat>.md`) |
@@ -97,6 +107,9 @@ goes into every player's memory.
 - **Meetings**: the seats speak in turns through the game chat (100 characters, cut at a word), then each
   waits until its own copy opens voting and votes. The game decides the result; the runner writes the
   same `vote_result` and public meeting record as the simulator.
+- **Talking**: the game has no chat outside meetings, so the runner relays a `say` line itself to every
+  seat whose copy shows the speaker (`saw_player` / `lost_player`), with the simulator's memory lines and
+  wake-up rules. It shows up in memories, the event log and the viewer, not on the game screen.
 - **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
 - **Tests** use `test/fake-bridge.js`, a small fake of the mod with the same protocol and events.
 
@@ -119,7 +132,8 @@ build on top (stats, highlight finders, your own overlay).
 |---|---|
 | `match_start` | players (with roles and models), map, rules, seed, language |
 | `thinking` | players being asked right now |
-| `decision` | p, reason, thought, action, raw, note, error, ms, model |
+| `decision` | p, reason, thought, action, raw, say, note, error, ms, model |
+| `say` | p, text, room, heard (ids), anon (heard only a voice), missed (named but out of earshot) |
 | `intent` | p, action (accepted by the engine) |
 | `move` / `arrive` | p, from/to/dur · p, room |
 | `task_start` / `task_done` / `taskbar` | p, task, room, visual · done, total |

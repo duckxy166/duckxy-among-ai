@@ -156,3 +156,73 @@ test('a reactor meltdown needs two players at once', () => {
   assert.equal(g2.winner, 'impostor');
   assert.equal(g2.reason, 'reactor');
 });
+
+test('a line said out loud reaches only the players who can see the speaker', () => {
+  const g = setup({ red: 'Admin', blue: 'Admin', green: 'Admin', pink: 'Storage' });
+  g.speak('blue', 'GREEN where were you? And PINK?');
+  const events = g.drain();
+  const said = events.find((e) => e.type === 'say');
+  assert.deepEqual(said.heard, ['red', 'green']);
+  assert.deepEqual(said.missed, ['pink']);
+  const heard = (id) => events.find((e) => e.type === 'obs' && e.p === id && e.kind === 'heard');
+  assert.equal(heard('green').text, 'BLUE said: "GREEN where were you? And PINK?"');
+  assert.equal(heard('green').data.toMe, true);
+  assert.equal(heard('red').data.toMe, false);
+  assert.equal(heard('pink'), undefined);
+  // The speaker knows who heard, and that PINK was out of earshot (so BLUE can go and find them).
+  const mine = events.find((e) => e.type === 'obs' && e.p === 'blue' && e.kind === 'you_said');
+  assert.match(mine.text, /heard by RED, GREEN; PINK not in earshot/);
+  // Only the named listener is woken, on the next second, even after an order of their own.
+  g.act('green', 'wait:15');
+  g.step();
+  assert.equal(P(g, 'green').needs, 'heard');
+  assert.equal(P(g, 'red').needs, null);
+});
+
+test('an answer wakes the one who asked; a listener is not woken again right away', () => {
+  const g = setup({ blue: 'Admin', green: 'Admin' });
+  g.speak('blue', 'GREEN where were you?');
+  g.step();
+  assert.equal(P(g, 'green').needs, 'heard');
+  g.speak('green', 'doing wires in Electrical');
+  g.step();
+  assert.equal(P(g, 'blue').needs, 'heard', 'GREEN answers BLUE without naming them');
+  P(g, 'green').needs = null;
+  g.speak('blue', 'GREEN really?');
+  g.step();
+  assert.equal(P(g, 'green').needs, null, 'woken less than talkWakeSeconds ago');
+});
+
+test('in the dark a crewmate hears a voice, not whose it is; during a sabotage every listener reacts', () => {
+  const g = setup({ red: 'Admin', blue: 'Admin', green: 'Admin', pink: 'Storage' });
+  g.sabotageNow(P(g, 'red'), 'lights');
+  g.step();
+  g.drain();
+  for (const p of g.players) p.needs = null;
+  g.speak('red', 'I will fix the lights');
+  let events = g.drain();
+  const voice = events.find((e) => e.type === 'obs' && e.p === 'green' && e.kind === 'heard');
+  assert.equal(voice.text, 'A voice in the dark said: "I will fix the lights"');
+  assert.equal(voice.data.who, null);
+  assert.deepEqual(events.find((e) => e.type === 'say').anon, ['blue', 'green']);
+  g.step();
+  assert.equal(P(g, 'blue').needs, 'heard');
+  assert.equal(P(g, 'green').needs, 'heard');
+
+  // A crewmate in the dark cannot tell who heard them, nor that someone named is missing.
+  g.speak('blue', 'PINK is that you?');
+  events = g.drain();
+  assert.deepEqual(events.find((e) => e.type === 'say').missed, []);
+  assert.match(events.find((e) => e.type === 'obs' && e.p === 'blue' && e.kind === 'you_said').text, /heard by 2 shadow/);
+});
+
+test('asked again to do the job it is doing, a player carries on instead of starting over', () => {
+  const g = setup({ blue: 'MedBay' });
+  P(g, 'blue').tasks = [{ id: 'scan', name: 'Submit Scan', room: 'MedBay', dur: 10, visual: true, done: false }];
+  g.act('blue', 'task:scan');
+  for (let i = 0; i < 4; i++) g.step();
+  const left = P(g, 'blue').busy.left;
+  assert.ok(left < 10);
+  g.act('blue', 'task:scan');
+  assert.equal(P(g, 'blue').busy.left, left);
+});
