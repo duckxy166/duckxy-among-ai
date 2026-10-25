@@ -206,6 +206,16 @@ public static partial class Body
         return new Dictionary<string, object> { ["enter"] = best.Id };
     }
 
+    // Where a vent leads: its neighbours and their rooms (null in a corridor). The game shows these as
+    // arrows inside the vent, and every impostor knows the map, so this reveals nothing about players.
+    static List<object> VentExits(global::Vent v)
+    {
+        var res = new List<object>();
+        foreach (var n in new[] { v.Left, v.Right, v.Center })
+            if (n != null) res.Add(new Dictionary<string, object> { ["id"] = n.Id, ["room"] = Game.RoomAt(n.transform.position) });
+        return res;
+    }
+
     // vents the impostor can currently see (lit and in sight only)
     internal static List<object> VentsForState(PlayerControl me, Vector2 a, float radius)
     {
@@ -219,12 +229,12 @@ public static partial class Body
             if (Vector2.Distance(a, p) > radius) continue;
             Vector2 q = p + (a - p).normalized * 0.35f; // vents sit in the wall line: test from just in front of them
             if (PhysicsHelpers.AnythingBetween(a, q, Constants.ShadowMask, false)) continue;
-            res.Add(new Dictionary<string, object> { ["id"] = v.Id, ["pos"] = new[] { Math.Round(p.x, 2), Math.Round(p.y, 2) }, ["room"] = Game.RoomAt(p), ["distance"] = Math.Round(Vector2.Distance(a, p), 2) });
+            res.Add(new Dictionary<string, object> { ["id"] = v.Id, ["pos"] = new[] { Math.Round(p.x, 2), Math.Round(p.y, 2) }, ["room"] = Game.RoomAt(p), ["distance"] = Math.Round(Vector2.Distance(a, p), 2), ["to"] = VentExits(v) });
         }
         if (me.inVent && global::Vent.currentVent != null)
         {
             var c = global::Vent.currentVent;
-            res.Add(new Dictionary<string, object> { ["current"] = c.Id, ["left"] = c.Left != null ? c.Left.Id : (int?)null, ["right"] = c.Right != null ? c.Right.Id : (int?)null, ["center"] = c.Center != null ? c.Center.Id : (int?)null });
+            res.Add(new Dictionary<string, object> { ["current"] = c.Id, ["left"] = c.Left != null ? c.Left.Id : (int?)null, ["right"] = c.Right != null ? c.Right.Id : (int?)null, ["center"] = c.Center != null ? c.Center.Id : (int?)null, ["to"] = VentExits(c) });
         }
         return res;
     }

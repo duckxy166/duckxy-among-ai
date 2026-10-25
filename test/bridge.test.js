@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { runBridgeMatch, fitChat } from '../src/bridge/runner.js';
 import { BridgeClient } from '../src/bridge/client.js';
-import { BridgeSeat } from '../src/bridge/seat.js';
+import { BridgeSeat, until } from '../src/bridge/seat.js';
+import { roamPrompt } from '../src/agents/prompts.js';
 import { launchArgs } from '../src/bridge/launcher.js';
 import { roomFromBridge, roomToBridge, colorId } from '../src/bridge/skeld.js';
 import { EpisodicMemory } from '../src/agents/memory.js';
@@ -136,6 +137,60 @@ test('after a meeting that ejects nobody, play goes on until the impostor wins',
   }
 });
 
+// Two impostors, Pink and Blue. Red calls a meeting at once and everyone votes Pink out; Pink's ghost
+// sabotages the lights, and Blue kills Green once they are out.
+function ghostScript(seat, decisions) {
+  return {
+    async complete({ context }) {
+      const { kind, view } = context;
+      const can = (id) => view.legal.some((a) => a.id === id);
+      const thought = `[${seat.id}] ${kind}`;
+      let out;
+      if (kind === 'roam') {
+        decisions.push({ p: seat.id, dead: view.dead, reason: view.reason, legal: view.legal.map((a) => a.id) });
+        let action = 'wait:15';
+        if (view.dead && can('sabotage:lights')) action = 'sabotage:lights';
+        else if (seat.id === 'blue') action = view.sabotage && can('kill:Green') ? 'kill:Green' : 'wait:5';
+        else if (seat.id === 'red' && view.reason === 'start') action = 'emergency';
+        out = { secret_thought: thought, action, note: '' };
+      } else if (kind === 'speak') {
+        out = { secret_thought: thought, chat_message: 'Pink is sus', suspect: 'Pink' };
+      } else if (kind === 'vote') {
+        out = { secret_thought: thought, vote: seat.id === 'pink' ? 'skip' : 'Pink' };
+      } else {
+        out = { secret_thought: thought, lesson: 'ok' };
+      }
+      return { text: JSON.stringify(out), refused: false, model: 'script', usage: {} };
+    },
+  };
+}
+
+test('an ejected impostor sabotages as a ghost, and is not asked while it cannot', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: ['Pink', 'Blue'], token: TOKEN, sabotageCooldown: 0 });
+  const decisions = [];
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, ghostScript(s, decisions)]));
+    const r = await play(ship, providers);
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(of('match_error').length, 0);
+    const result = of('vote_result')[0];
+    assert.equal(result.ejected, 'pink');
+    const sab = of('sabotage').find((e) => e.by === 'pink');
+    assert.ok(sab && sab.seq > result.seq, 'the ghost sabotaged after its ejection');
+    assert.ok(ship.ship.calls.some((c) => c.who === 'Pink' && c.do === 'sabotage' && c.type === 'lights'));
+    assert.ok(r.agents.get('pink').memory.entries.some((e) => e.kind === 'you_sabotaged'));
+    // One decision as a ghost: woken by a ready sabotage, offered nothing else, and with the
+    // sabotage on there was nothing left to ask.
+    const ghost = decisions.filter((d) => d.p === 'pink' && d.dead);
+    assert.equal(ghost.length, 1);
+    assert.equal(ghost[0].reason, 'sabotage_ready');
+    assert.ok(ghost[0].legal.every((id) => id.startsWith('wait:') || id.startsWith('sabotage:')));
+    assert.deepEqual([r.winner, r.reason], ['impostor', 'ImpostorsByKill']);
+  } finally {
+    await ship.close();
+  }
+});
+
 test('the mock brains play a whole game on the fake ship', async () => {
   const ship = await startFakeShip({ names: NAMES, impostor: 'Blue', token: TOKEN });
   try {
@@ -224,6 +279,108 @@ test('a seat turns bridge events into memory lines and actions into act commands
   assert.deepEqual(calls.at(-1), { do: 'kill', target: 'Blue' });
   assert.equal(memory.entries.at(-1).kind, 'rejected');
   assert.match(memory.entries.at(-1).text, /cooldown/);
+});
+
+const seatMatch = (emitted = [], warnings = []) => ({
+  lang: 'en', rules: { followSeconds: 20, emergencyMeetings: 1 }, meeting: null, over: false, knownDead: new Set(),
+  now: () => 30, emit: (e) => emitted.push(e), warn: (w) => warnings.push(w),
+  onBridgeEvent() {}, onKill() {}, onDeath() {}, onSabotage() {}, onSabotageFixed() {}, onTaskDone() {},
+});
+
+test('an impostor vents through its copy: walk to the vent, in, one hop, out', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN });
+  const client = (i) => new BridgeClient({ id: i + 1, port: ship.ports[i], token: TOKEN });
+  const emitted = [];
+  const warnings = [];
+  const match = seatMatch(emitted, warnings);
+  const pink = new BridgeSeat({ seat: { id: 'pink', name: 'Pink' }, client: client(3), match });
+  const red = new BridgeSeat({ seat: { id: 'red', name: 'Red' }, client: client(0), match });
+  try {
+    await client(0).call('start');
+    pink.role = 'impostor';
+    red.role = 'crew';
+    const memory = new EpisodicMemory();
+    pink.attach({ memory });
+    await pink.syncEvents();
+    pink.pump();
+    await Promise.all([pink.refresh(), red.refresh()]);
+
+    // The vent in Cafeteria leads to Admin (the mod's `to`); crewmates get no vent actions.
+    assert.deepEqual(pink.view('idle').vents, ['Admin']);
+    assert.ok(pink.legalActions().some((a) => a.id === 'vent:Admin'));
+    assert.ok(!red.legalActions().some((a) => a.id.startsWith('vent:')));
+
+    await pink.execute('vent:Admin');
+    assert.ok(await until(async () => pink.plan === null && !pink.venting, 5000, 20), 'the vent plan ends');
+    // The first hop comes while the jump in is still animating; the game refuses it and it is sent again.
+    const steps = ship.ship.calls.filter((c) => c.who === 'Pink').map((c) => (c.do === 'vent' ? `vent ${c.to ?? c.enter}` : c.do));
+    assert.deepEqual(steps, ['move_to', 'vent true', 'vent 1', 'vent 1', 'vent false']);
+    assert.ok(!memory.entries.some((e) => e.kind === 'rejected'));
+    assert.equal(pink.room, 'Admin');
+    assert.ok(memory.entries.some((e) => e.kind === 'you_vented' && /from Cafeteria to Admin/.test(e.text)));
+    assert.ok(emitted.some((e) => e.type === 'vent' && e.p === 'pink' && e.from === 'Cafeteria' && e.to === 'Admin'));
+    // Red stood in Cafeteria and saw Pink go in.
+    assert.ok(ship.players[0].events.some((e) => e.type === 'saw_vent' && e.name === 'Pink' && e.action === 'enter'));
+
+    // No vent in Admin leads to Electrical: refused without walking anywhere.
+    const before = ship.ship.calls.length;
+    await pink.execute('vent:Electrical');
+    assert.equal(ship.ship.calls.length, before);
+    assert.match(memory.entries.at(-1).text, /no vent here leads there/);
+    assert.deepEqual(warnings, []);
+  } finally {
+    pink.stop();
+    await ship.close();
+  }
+});
+
+test('a dead impostor is offered sabotage only, and only when one is ready', async () => {
+  const state = {
+    phase: 'tasks', canMove: true, me: { name: 'Pink', alive: false, role: 'ghost_imp', room: 'Admin' },
+    tasks: [], visible: [], bodies: [], vents: [], sabotage: { active: null, timer: 0, cooldown: 12 },
+  };
+  const calls = [];
+  const client = {
+    act: async (a) => { calls.push(a); return { ok: true }; },
+    state: async () => ({ ok: true, stage: 'ingame', game: state }),
+  };
+  const match = seatMatch();
+  const pink = new BridgeSeat({ seat: { id: 'pink', name: 'Pink' }, client, match });
+  pink.role = 'impostor';
+  const memory = new EpisodicMemory();
+  pink.attach({ memory });
+  await pink.refresh();
+  assert.equal(pink.alive, false);
+  assert.deepEqual(pink.legalActions(), []);
+  await pink.tick();
+  assert.equal(pink.needs, null, 'no sabotage ready: nothing to decide');
+
+  state.sabotage.cooldown = 0;
+  await pink.tick();
+  assert.equal(pink.needs, 'sabotage_ready');
+  assert.deepEqual(pink.legalActions().map((a) => a.id), ['wait:15', 'sabotage:lights', 'sabotage:reactor', 'sabotage:o2', 'sabotage:comms']);
+  const view = pink.view('sabotage_ready');
+  assert.equal(view.dead, true);
+  assert.match(roamPrompt(view, memory), /You are DEAD/);
+  await pink.execute('sabotage:o2');
+  assert.deepEqual(calls.at(-1), { do: 'sabotage', type: 'o2' });
+  assert.equal(memory.entries.at(-1).kind, 'you_sabotaged');
+  // The copy is not the host: its state still shows no sabotage for a moment. Live, the brain then
+  // sent it again up to 5 times; now it counts as on until the copy shows it (3 s at most).
+  assert.equal(state.sabotage.active, null);
+  assert.deepEqual(pink.legalActions(), []);
+  pink.needs = null;
+  await pink.tick();
+  assert.equal(pink.needs, null);
+
+  // A dead crewmate's copy runs on autopilot: no choices and no wake-ups.
+  const green = new BridgeSeat({ seat: { id: 'green', name: 'Green' }, client, match });
+  green.role = 'crew';
+  green.alive = false;
+  green.state = state;
+  assert.deepEqual(green.legalActions(), []);
+  green.wake('idle');
+  assert.equal(green.needs, null);
 });
 
 test('names, chat length and launch arguments', () => {

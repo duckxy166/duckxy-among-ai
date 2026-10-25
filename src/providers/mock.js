@@ -40,6 +40,10 @@ const BRAINS = {
       return reply('report', `เจอศพ ${view.bodies[0]} ต้องรีบรายงาน`, `เจอศพ ${view.bodies[0]} ที่ ${view.room}`);
     }
     if (view.role === 'impostor') {
+      if (view.dead) {
+        const sabs = all('sabotage:');
+        return sabs.length && rng.chance(0.5) ? reply(rng.pick(sabs), 'ตายแล้วแต่ยังป่วนลูกเรือได้') : reply('wait:15', 'รอจังหวะให้คู่หูก่อน');
+      }
       const kills = all('kill:');
       if (kills.length && view.visible.length === 1) return reply(kills[0], `${kills[0].slice(5)} อยู่คนเดียว ไม่มีพยาน ลงมือเลย`);
       const fakes = all('fake:');

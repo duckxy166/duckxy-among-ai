@@ -110,7 +110,8 @@ goes into every player's memory.
 - **Talking**: the game has no chat outside meetings, so the runner relays a `say` line itself to every
   seat whose copy shows the speaker (`saw_player` / `lost_player`), with the simulator's memory lines and
   wake-up rules. It shows up in memories, the event log and the viewer, not on the game screen.
-- **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
+- **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot. A dead impostor still
+  sabotages; its brain is asked only when a sabotage is ready.
 - **Tests** use `test/fake-bridge.js`, a small fake of the mod with the same protocol and events.
 
 ## Game rules in short
