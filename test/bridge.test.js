@@ -1,0 +1,231 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { runBridgeMatch, fitChat } from '../src/bridge/runner.js';
+import { BridgeClient } from '../src/bridge/client.js';
+import { BridgeSeat } from '../src/bridge/seat.js';
+import { launchArgs } from '../src/bridge/launcher.js';
+import { roomFromBridge, roomToBridge, colorId } from '../src/bridge/skeld.js';
+import { EpisodicMemory } from '../src/agents/memory.js';
+import { createProvider } from '../src/providers/index.js';
+import { startFakeShip } from './fake-bridge.js';
+
+const TOKEN = 'test-token-0123456789abcdef';
+const NAMES = ['Red', 'Blue', 'Green', 'Pink'];
+const SEATS = NAMES.map((n) => ({ id: n.toLowerCase(), name: n, color: n.toLowerCase(), provider: 'mock', label: 'mock' }));
+const CONFIG = {
+  seed: 5, language: 'en', discussionRounds: 1, revealModels: true, persistentMemory: false, logPrompts: false, rules: {},
+  bridge: { lobby: { discussion: 0, voting: 5 }, maxMinutes: 1 },
+};
+
+async function play(ship, providers) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'among-ai-bridge-'));
+  const clients = new Map(SEATS.map((s, i) => [s.id, new BridgeClient({ id: i + 1, port: ship.ports[i], token: TOKEN })]));
+  return runBridgeMatch({ config: CONFIG, seats: SEATS, providers, clients, matchId: 'test-bridge', dir, memoryDir: path.join(dir, 'memory') });
+}
+
+// The impostor (Pink) kills Green at once and kills again right after a meeting; the crew reports and
+// accuses Pink. crewVote: what the crew votes ('Pink' ends the game at the first meeting, 'skip' plays on).
+function scripted(seat, prompts, crewVote = 'Pink') {
+  return {
+    async complete({ user, context }) {
+      prompts.push(user);
+      const { kind, view, role } = context;
+      const can = (id) => view.legal.some((a) => a.id === id);
+      const thought = `[${seat.id}] ${kind}`;
+      let out;
+      if (kind === 'roam') {
+        const again = view.reason === 'meeting_over' ? view.legal.find((a) => a.id.startsWith('kill:'))?.id : undefined;
+        const kill = can('kill:Green') ? 'kill:Green' : again;
+        const action = role === 'impostor' ? kill ?? 'wait:15' : can('report') ? 'report' : 'wait:15';
+        out = { secret_thought: thought, action, note: '' };
+      } else if (kind === 'speak') {
+        out = role === 'impostor'
+          ? { secret_thought: thought, chat_message: 'not me, I was doing tasks the whole time', suspect: 'none' }
+          : { secret_thought: thought, chat_message: `I saw Pink kill Green in Cafeteria. ${'Vote Pink now! '.repeat(10)}`, suspect: 'Pink' };
+      } else if (kind === 'vote') {
+        out = { secret_thought: thought, vote: role === 'impostor' ? 'skip' : crewVote };
+      } else {
+        out = { secret_thought: thought, lesson: 'ok' };
+      }
+      return { text: JSON.stringify(out), refused: false, model: 'script', usage: {} };
+    },
+  };
+}
+
+test('a scripted round through the bridge: kill, report, chat, vote, crew win', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 2500 });
+  const prompts = new Map(SEATS.map((s) => [s.id, []]));
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, prompts.get(s.id))]));
+    const r = await play(ship, providers);
+    const of = (type) => r.events.filter((e) => e.type === type);
+
+    assert.equal(r.winner, 'crew');
+    assert.equal(r.reason, 'CrewmatesByVote');
+    assert.equal(of('match_error').length, 0);
+    const start = of('match_start')[0];
+    assert.equal(start.body, 'among-us');
+    assert.deepEqual(start.players.map((p) => p.role), ['crew', 'crew', 'crew', 'impostor']);
+    assert.equal(ship.ship.config.impostors, 1);
+
+    const kill = of('kill')[0];
+    assert.deepEqual([kill.killer, kill.victim, kill.room], ['pink', 'green', 'Cafeteria']);
+    assert.deepEqual(kill.witnesses.sort(), ['blue', 'red']);
+    const meeting = of('meeting_start')[0];
+    assert.deepEqual([meeting.reason, meeting.body], ['body', 'green']);
+
+    // Chat goes through the game, cut to its 100-character limit.
+    const sent = ship.ship.calls.filter((c) => c.do === 'chat');
+    assert.equal(sent.length, 3);
+    assert.ok(sent.every((c) => c.text.length <= 100));
+    assert.deepEqual(of('vote').map((v) => `${v.p}>${v.target}`).sort(), ['blue>pink', 'pink>skip', 'red>pink']);
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.ejected, result.wasImpostor], ['pink', true]);
+    assert.deepEqual(of('game_over')[0].winner, 'crew');
+    // The game ends on this vote, yet the log tells the vote result first.
+    assert.ok(result.seq < of('game_over')[0].seq);
+
+    // Each memory holds only what that copy showed.
+    const mem = (id) => r.agents.get(id).memory;
+    assert.ok(mem('red').evidence().some((f) => f.kind === 'kill' && f.who === 'Pink'));
+    assert.ok(mem('pink').entries.some((e) => e.kind === 'you_killed'));
+    assert.ok(mem('green').entries.some((e) => e.kind === 'you_died'));
+    assert.ok(!mem('pink').entries.some((e) => e.kind === 'saw_kill'));
+    assert.ok(mem('red').meetings[0].includes('Pink was ejected (an Impostor)'));
+    // A dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
+    assert.ok(ship.ship.calls.some((c) => c.who === 'Green' && c.do === 'autopilot'));
+    for (const [id, list] of prompts) {
+      for (const other of SEATS.map((s) => s.id).filter((x) => x !== id)) {
+        assert.ok(!list.join('\n').includes(`[${other}] `), `${id} saw a thought of ${other}`);
+      }
+    }
+  } finally {
+    await ship.close();
+  }
+});
+
+test('after a meeting that ejects nobody, play goes on until the impostor wins', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500 });
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [], 'skip')]));
+    const r = await play(ship, providers);
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(of('match_error').length, 0);
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.ejected, result.why], [null, 'skip']);
+    const end = of('meeting_end')[0];
+    assert.ok(end, 'the meeting closes once every copy can move again');
+    // Every living seat is woken by the end of the meeting and decides again.
+    const after = of('decision').filter((d) => d.seq > end.seq && d.reason === 'meeting_over').map((d) => d.p).sort();
+    assert.deepEqual(after, ['blue', 'pink', 'red']);
+    assert.equal(of('kill').length, 2);
+    assert.deepEqual([r.winner, r.reason], ['impostor', 'ImpostorsByKill']);
+    assert.ok(r.agents.get('red').memory.meetings[0].includes('nobody was ejected (skip)'));
+  } finally {
+    await ship.close();
+  }
+});
+
+test('the mock brains play a whole game on the fake ship', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Blue', token: TOKEN });
+  try {
+    const providers = new Map();
+    for (const s of SEATS) providers.set(s.id, await createProvider(s, { seed: 9 }));
+    const r = await play(ship, providers);
+    assert.ok(['crew', 'impostor'].includes(r.winner));
+    assert.equal(r.events.filter((e) => e.type === 'match_error').length, 0);
+    const stats = r.events.at(-1);
+    assert.equal(stats.type, 'stats');
+    assert.ok(Object.values(stats.seats).every((s) => s.calls > 0));
+    assert.ok(r.events.some((e) => e.type === 'memory' && e.kind === 'task_done'));
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a seat turns bridge events into memory lines and actions into act commands', async () => {
+  const STATE = {
+    phase: 'tasks', canMove: true,
+    me: { name: 'Red', alive: true, role: 'impostor', room: 'Nav', killCooldown: 0, killRange: 1.5, partner: null },
+    tasks: [{ id: 3, name: 'StabilizeSteering', room: 'Nav', done: false }, { id: 4, name: 'FixWiring', room: 'Electrical', done: false, fake: true }],
+    taskBar: 0.25,
+    visible: [{ name: 'Blue', room: 'Nav', alive: true, distance: 1 }],
+    bodies: [],
+    sabotage: { active: null, timer: 0, cooldown: 0 },
+  };
+  const calls = [];
+  const client = {
+    act: async (a) => { calls.push(a); return a.do === 'kill' ? { ok: false, error: 'kill cooldown 3.0s left' } : { ok: true }; },
+    state: async () => ({ ok: true, stage: 'ingame', game: STATE }),
+  };
+  const emitted = [];
+  const match = {
+    lang: 'en', rules: { followSeconds: 20, emergencyMeetings: 1 }, meeting: null, over: false, knownDead: new Set(),
+    now: () => 12, emit: (e) => emitted.push(e), warn: () => {},
+    onBridgeEvent() {}, onKill() {}, onDeath() {}, onSabotage() {}, onSabotageFixed() {}, onTaskDone() {},
+  };
+  const seat = new BridgeSeat({ seat: { id: 'red', name: 'Red' }, client, match });
+  seat.role = 'impostor';
+  const memory = new EpisodicMemory();
+  seat.onEvent({ type: 'saw_player', t: 9, name: 'Blue', room: 'Nav' }); // before attach: buffered
+  seat.attach({ memory });
+  seat.state = STATE;
+
+  seat.onEvent({ type: 'saw_kill', t: 10, killer: 'Blue', victim: 'Green', room: 'LifeSupp' });
+  const line = memory.entries.at(-1);
+  assert.equal(line.kind, 'saw_kill');
+  assert.match(line.text, /Blue killed Green in O2/);
+  assert.equal(seat.needs, 'saw_kill');
+  assert.equal(memory.entries[0].kind, 'saw_player');
+
+  seat.onEvent({ type: 'room_changed', t: 11, room: 'Nav' });
+  assert.deepEqual(emitted.find((e) => e.type === 'arrive'), { type: 'arrive', t: 12, p: 'red', room: 'Navigation', ghost: false });
+  assert.match(memory.entries.at(-1).text, /Arrived at Navigation — saw: Blue/);
+
+  const ids = seat.legalActions().map((a) => a.id);
+  for (const id of ['move:O2', 'fake:3', 'follow:Blue', 'kill:Blue', 'sabotage:lights', 'emergency']) assert.ok(ids.includes(id), id);
+  for (const id of ['move:Navigation', 'fake:4', 'task:3', 'fix', 'report']) assert.ok(!ids.includes(id), id);
+  const view = seat.view('idle');
+  assert.equal(view.location, 'Navigation');
+  assert.deepEqual(view.taskBar, { done: 25, total: 100 });
+  assert.deepEqual(view.tasks.map((x) => [x.name, x.room, x.done]), [['Stabilize Steering', 'Navigation', false], ['Fix Wiring', 'Electrical', true]]);
+
+  await seat.execute('move:O2');
+  assert.deepEqual(calls.at(-1), { do: 'move_to', room: 'LifeSupp' });
+  seat.needs = null;
+  seat.onEvent({ type: 'arrived', t: 20, room: 'LifeSupp' });
+  assert.equal(seat.plan, null);
+  assert.equal(seat.needs, 'idle');
+
+  // A walk that ends while the brain is already choosing its next action asks for no second decision.
+  seat.needs = null;
+  await seat.execute('move:Admin');
+  seat.plan.stale = true;
+  seat.onEvent({ type: 'arrived', t: 25, room: 'Admin' });
+  assert.equal(seat.plan, null);
+  assert.equal(seat.needs, null);
+
+  await seat.execute('kill:Blue');
+  assert.deepEqual(calls.at(-1), { do: 'kill', target: 'Blue' });
+  assert.equal(memory.entries.at(-1).kind, 'rejected');
+  assert.match(memory.entries.at(-1).text, /cooldown/);
+});
+
+test('names, chat length and launch arguments', () => {
+  assert.equal(roomFromBridge('Comms'), 'Communications');
+  assert.equal(roomFromBridge('Hallway'), null);
+  assert.equal(roomToBridge('O2'), 'LifeSupp');
+  assert.equal(colorId('pink'), 3);
+  const long = `${'word '.repeat(40)}end`;
+  const cut = fitChat(long);
+  assert.ok(cut.length <= 100 && cut.endsWith('…') && !cut.includes('wor…'));
+  assert.equal(fitChat('  short   text '), 'short text');
+  const args = launchArgs({ id: 2, mode: 'join', name: 'Kimi', color: 'purple', token: TOKEN, port: 47002 });
+  assert.ok(args.includes('--aub-mode=join') && args.includes('--aub-color=8') && args.includes('--aub-port=47002'));
+  const b64 = args.find((a) => a.startsWith('--aub-nameb64=')).split('=')[1];
+  assert.equal(Buffer.from(b64, 'base64').toString('utf8'), 'Kimi');
+  assert.throws(() => new BridgeClient({ id: 1, token: 'short' }), /16 or more/);
+});

@@ -1,6 +1,9 @@
 // Library entry point, for projects that run Among AI matches from their own code.
 
 export { runMatch } from './match/runner.js';
+export { runBridgeMatch, DEFAULT_LOBBY } from './bridge/runner.js';
+export { openLobby, makeClients, newToken } from './bridge/launcher.js';
+export { BridgeClient, BridgeError } from './bridge/client.js';
 export { loadConfig } from './config.js';
 export { createProvider, missingKeys, PRESETS } from './providers/index.js';
 export { createHub, startServer, listMatches, readEvents } from './server/server.js';

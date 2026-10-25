@@ -81,6 +81,25 @@ chat so far. Votes are collected in parallel and shown together. A strict plural
 option (including skip) ejects; ties eject nobody. The meeting's public record (lines, votes, result)
 goes into every player's memory.
 
+## The real game (src/bridge)
+
+`node src/cli.js real` swaps the body: every seat plays one Among Us copy through the AUBridge mod
+(newline JSON on `127.0.0.1:47000+n`, details in [REAL_GAME.md](REAL_GAME.md)). The brain does not change.
+
+- **Seat** (`seat.js`): long-polls its copy's events and writes them into that seat's memory with the
+  simulator's kinds and wording (`saw_player`, `saw_body`, `saw_kill`, `task_done`, `arrived`...).
+  `view()` and `legalActions()` are built from the copy's `state` in the simulator's shapes, and an
+  action becomes an `act` (`move:O2` → `move_to {room: "LifeSupp"}`). Room names are mapped both ways
+  (`skeld.js`), so prompts and the viewer use the same names as the simulator.
+- **Real time** (`runner.js`): nothing waits for a model. A seat decides when something wakes it (start,
+  arrived, task done, saw a body or a kill, lost sight, a timer, the meeting ended); its body keeps doing
+  the last action meanwhile. A plan that ends while a new decision is under way wakes nobody.
+- **Meetings**: the seats speak in turns through the game chat (100 characters, cut at a word), then each
+  waits until its own copy opens voting and votes. The game decides the result; the runner writes the
+  same `vote_result` and public meeting record as the simulator.
+- **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
+- **Tests** use `test/fake-bridge.js`, a small fake of the mod with the same protocol and events.
+
 ## Game rules in short
 
 - 4 to 10 players; 1 impostor up to 6 players, 2 above (configurable).
@@ -121,6 +140,7 @@ build on top (stats, highlight finders, your own overlay).
 | `src/agents/` | Agent, memory, prompts and output schemas |
 | `src/providers/` | Anthropic, OpenAI-compatible and mock brains |
 | `src/match/runner.js` | Runs a match and writes the event log |
+| `src/bridge/` | The real game through AUBridge: client, seat, real-time runner, launcher, Skeld names |
 | `src/server/server.js` | Viewer server: static files, live SSE, saved matches (`webRoot` swaps the page) |
 | `src/index.js` | Library entry point (`import { runMatch } from 'duckxy-among-ai'`) |
 | `web/` | The viewer (plain HTML/CSS/JS, no build step) |

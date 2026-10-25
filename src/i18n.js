@@ -45,6 +45,14 @@ const TEXT = {
     why_skip: 'ส่วนใหญ่ skip',
     rejected: "ทำ '{action}' ไม่ได้: {reason}",
     lost_follow: 'ตาม {name} ไม่ทันแล้ว',
+    // real game (AUBridge) only
+    corridor: 'ทางเดิน',
+    stuck: 'เดินติดอยู่ ไปต่อไม่ได้',
+    you_died_unseen: 'ถูกฆ่าที่ {room} ไม่ทันเห็นว่าใคร',
+    sab_o2: 'O2 กำลังจะหมด! ต้องไปกดรหัสที่ O2 และ Admin ภายใน {secs} วิ',
+    sab_comms: 'Comms ถูก sabotage! มองไม่เห็นรายการ task',
+    fixed_o2: 'O2 กลับมาแล้ว',
+    fixed_comms: 'Comms กลับมาแล้ว',
   },
   en: {
     arrived: 'Arrived at {room}{who}',
@@ -89,6 +97,14 @@ const TEXT = {
     why_skip: 'most skipped',
     rejected: "Could not do '{action}': {reason}",
     lost_follow: 'Lost track of {name}',
+    // real game (AUBridge) only
+    corridor: 'a corridor',
+    stuck: 'Got stuck and could not go on',
+    you_died_unseen: 'You were killed in {room} without seeing who did it',
+    sab_o2: 'O2 is running out! Enter the codes in O2 and Admin within {secs}s',
+    sab_comms: 'Comms sabotaged! The task list is hidden',
+    fixed_o2: 'O2 is back',
+    fixed_comms: 'Comms are back',
   },
 };
 

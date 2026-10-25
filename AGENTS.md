@@ -11,7 +11,7 @@ in this repository. When production needs something, add an event field, an expo
 ## Checks
 
 ```bash
-npm test                            # node --test: engine, memory, full mock matches
+npm test                            # node --test: engine, memory, full mock matches, bridge vs a fake AUBridge
 node src/cli.js run --mock          # a full match without API keys
 node src/cli.js replay              # then open http://localhost:7777 to look at the viewer
 ```
@@ -29,6 +29,10 @@ node src/cli.js replay              # then open http://localhost:7777 to look at
 - **Determinism.** The engine uses only the seeded RNG from `src/rng.js` (never `Math.random`) and does
   not read the clock, so a seed replays a match.
 - **Observation kinds** match the event names of the AUBridge mod on purpose (docs/REAL_GAME.md).
+- **The bridge is honest too.** In `src/bridge/` a seat's view, legal actions and memory come only from
+  its own game copy (`state` and events of that copy). It is real time, so it is not deterministic; the
+  seed only replays simulator matches. `test/fake-bridge.js` stands in for the mod in tests: when you
+  change what the bridge expects from AUBridge, change the fake the same way.
 - **Credit.** Keep the copyright line in `LICENSE`, the Credit section of the README and the credit in
   the viewer footer.
 - No game files, assets or code from Among Us; no API keys, `.env`, `arena.config.json`, `matches/` or

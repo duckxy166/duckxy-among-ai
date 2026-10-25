@@ -1,10 +1,9 @@
 # Plan: the same brains in the real Among Us
 
-Status: **2026-10-25: BepInEx runs on our build, upstream AUBridge is ported, and one full round (lobby →
-start → walk → task → kill → report → chat → vote → crew win) passes with 4 copies driven only through
-the bridge. No bridge adapter in this repository yet.** Everything in this
-repository runs on its own simulator. This page is the plan for a second body: real game clients driven
-through a mod, with the brain layer unchanged.
+Status: **2026-10-25: BepInEx runs on our build, upstream AUBridge is ported, a scripted round passes
+with 4 copies, and `src/bridge/` lets the brains play the real game: `node src/cli.js real` played two
+whole games with 4 mock brains.** This page started as the plan for that second body (real game
+clients driven through a mod, with the brain layer unchanged) and now records how far it got.
 
 ## What already lines up
 
@@ -125,6 +124,49 @@ Notes for the adapter:
 - The joining copies still log the `NullReferenceException` in `PlayerControl.HandleRpc`. It did not
   affect this round.
 
+## The bridge adapter: src/bridge (2026-10-25)
+
+`node src/cli.js real` opens one copy per seat (copy 1 hosts, the rest join), sends `configure` and
+`start`, reads each seat's role from its own copy, then hands the game to the same `Agent`, memory and
+prompts as the simulator. How it works is in [ARCHITECTURE.md](ARCHITECTURE.md#the-real-game-srcbridge).
+In short: AUBridge events become memory lines with the simulator's kinds, `view()` and `legalActions()`
+are built from the copy's `state`, actions become `act` calls, every seat decides on its own in real
+time, and meetings go through the real chat and vote.
+
+Not wired up yet: vents (the mod has `vent`, the brains are not offered it), AUBridge's reflexes, and
+the in-game `label` command. The impostor count is lowered to what the game allows (2 from 7 players).
+
+Tests: `test/bridge.test.js` runs the runner against `test/fake-bridge.js`, a small fake of the mod (same
+protocol, events and state fields): a scripted kill → report → chat → vote → crew win, a meeting that
+ejects nobody followed by more play, a whole game with the mock brains, and the seat's event and action
+mapping.
+
+Live runs on the itch build, 4 copies, mock brains (`--mock`, lab config with kill cooldown 10 s):
+
+| Run | What happened | Checks |
+|---|---|---|
+| 1 (09:23) | Pink (impostor) sabotaged at 68 s, killed Blue at 92 s and reported; Red was voted out (not the impostor); impostors win by vote at 127 s | no crash, no rejected action, no warning; 38 decisions; Thai chat sent without errors |
+| 2 (09:31), after the review fixes | Red (impostor) killed Green alone in Cafeteria at 13 s and reported; everyone skipped; play went on; Red killed Blue in Storage; impostors win by kill at 99 s | the log reads `vote_result → meeting_end → kill → game_over`; all 3 living seats decided again with reason `meeting_over`; each copy voted only after its own voting opened (meeting at 15 s, discussion 40 s, votes at 61 s); no seat decided twice within 0.5 s; no rejected action |
+
+Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
+
+- A plan that ended while its player was already choosing the next action woke it again, so it decided
+  twice in a row and could drop the action it had just picked. Now such a plan is marked stale and wakes
+  nobody.
+- When a vote ended the game, `game_over` was written before `vote_result` (the mod sends
+  `meeting_ended` and `game_ended` together). `game_over` is now written after the meeting's result.
+- An `act` that failed on the network inside an event handler could crash the whole process. It is
+  caught now.
+- The viewer could miss "X sabotaged" when another copy's `sabotage` event came before the impostor's own
+  `act` reply. Only the `act` reply writes it now.
+
+Still open:
+
+- Whether the game's chat font shows Thai. The text reaches the game without errors, but the chat window
+  only opens on a click, so no screenshot shows it yet.
+- Real models: real time means slow models leave their player idle. Not measured yet.
+- 6 to 8 copies at once (memory and CPU on one PC), and vents.
+
 ## Steps
 
 1. ~~Read the game version of the itch build and check whether BepInEx 6 IL2CPP (x86) and Reactor run
@@ -133,8 +175,8 @@ Notes for the adapter:
    and another joining a local lobby.~~ Done 2026-10-25, see above.
 3. ~~Bring up copies in one local lobby; script `configure → start → move_to → do_task → kill → report →
    vote` through the bridge (upstream's own acceptance test).~~ Done 2026-10-25 with 4 copies, see above.
-4. Write `src/bridge/` here: one client per seat, events → `obs`, `view()`, `legalActions()`, `act()`,
-   and a real-time runner loop with reflexes.
+4. ~~Write `src/bridge/` here: one client per seat, events → `obs`, `view()`, `legalActions()`, `act()`,
+   and a real-time runner loop.~~ Done 2026-10-25 (reflexes not used yet), see above.
 5. Run 8 copies with mock brains, then with real models.
 
 Rules that do not change: local lobbies only (never official servers), no paid cosmetics unlocked, no

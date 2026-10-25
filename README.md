@@ -54,6 +54,7 @@ npm start
 | Command | Does |
 |---|---|
 | `node src/cli.js run [--serve] [--mock] [--seed n] [--seats n] [--config file]` | Play a match. `--serve` opens the live viewer. |
+| `node src/cli.js real [--mock] [--serve] [--seats n] [--config file] [--attach] [--keep-open]` | Play in the real Among Us: one game copy per seat, driven through the AUBridge mod (see [Real Among Us](#real-among-us)). |
 | `node src/cli.js replay [matchId]` | Serve the viewer for a recorded match (the latest by default). |
 | `node src/cli.js check` | One small request per seat: keys, model ids, latency. |
 | `node src/cli.js list` | Recorded matches and who won. |
@@ -136,8 +137,24 @@ the live and recorded events to a page of your own.
 
 ## Real Among Us
 
-This version runs its own simulator. The brain layer is built so the same agents can later drive the
-real game through a mod; the plan is in [docs/REAL_GAME.md](docs/REAL_GAME.md).
+The same brains can also play the real game. `node src/cli.js real` opens one Among Us copy per seat on
+this PC, has the first one host a local (LAN) lobby and the others join, then plays in real time: every
+player decides on its own when something happens to it, and meetings go through the real chat and vote.
+Memories, prompts, the event log and the viewer are the same as in the simulator.
+
+What you need:
+
+- Among Us on Windows with BepInEx 6 (IL2CPP) and the **AUBridge** mod from
+  [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) in its `BepInEx/plugins`.
+  The itch.io build 2026.9.29 needs the small port described in [docs/REAL_GAME.md](docs/REAL_GAME.md).
+- `bridge.gamePath` in `arena.config.json` (or `AMONG_US_EXE`) pointing at `Among Us.exe`. The `bridge`
+  block in `arena.config.example.json` shows the lobby options.
+- Seat names of 1-10 letters or digits (the game's limit), and 4 or more seats. The game allows
+  2 impostors from 7 players and 3 from 9; a bigger `rules.impostors` is lowered to that.
+
+`node src/cli.js real --mock --seats 4` is a free first test. Local lobbies only: never point this at
+the official servers. Vent actions are not wired up yet. Status and test results:
+[docs/REAL_GAME.md](docs/REAL_GAME.md).
 
 ## Credit
 
@@ -153,7 +170,8 @@ Among AI was created by **Duckxy** (YouTube [@LDuckxy](https://www.youtube.com/@
 
 The idea of real AI players with honest vision, a brain/body split and memory between matches was
 inspired by [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) (MIT), which runs
-Claude agents inside the real game through a BepInEx mod. No code was copied from it.
+Claude agents inside the real game through a BepInEx mod. `src/bridge/` talks to its AUBridge mod over
+the mod's own protocol. No code was copied from it.
 
 ## License
 
@@ -188,6 +206,11 @@ npm run mock
 
 เปิด <http://localhost:7777> ดูแมตช์บอททดลอง (ไม่ใช้ API ไม่เสียเงิน) จากนั้นคัดลอก `arena.config.example.json`
 เป็น `arena.config.json` และ `.env.example` เป็น `.env` ใส่ API key แล้วรัน `node src/cli.js check` ก่อน `npm start`
+
+**เล่นในเกม Among Us จริง:** `node src/cli.js real` เปิดเกมหนึ่งหน้าต่างต่อผู้เล่นหนึ่งคน (ตัวแรกเปิด lobby แบบ local
+ที่เหลือเข้าร่วม) แล้วให้ AI ชุดเดิมเล่นแบบเรียลไทม์ผ่าน mod AUBridge ต้องติดตั้ง BepInEx + AUBridge ในโฟลเดอร์เกมก่อน
+และตั้ง `bridge.gamePath` ใน config ลองฟรีได้ด้วย `node src/cli.js real --mock --seats 4` รายละเอียดดูหัวข้อ
+[Real Among Us](#real-among-us) และ [docs/REAL_GAME.md](docs/REAL_GAME.md) ใช้กับ lobby แบบ local เท่านั้น
 
 **เครดิต:** ถ้านำไปใช้ในคลิป/สตรีม/บทความ กรุณาให้เครดิต "Among AI by Duckxy" พร้อมลิงก์ repo นี้;
 ไลเซนส์ MIT กำหนดให้คงข้อความลิขสิทธิ์ใน [LICENSE](LICENSE) ไว้ทุกสำเนา

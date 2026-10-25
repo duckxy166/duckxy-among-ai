@@ -13,6 +13,12 @@
     "confirmEjects": true,
     "maxGameSeconds": 900
   },
+  "bridge": {
+    "_comment": "Only for `node src/cli.js real`: the real Among Us through the AUBridge mod (docs/REAL_GAME.md). gamePath: your Among Us.exe with BepInEx and AUBridge installed. lobby: options sent to the host copy.",
+    "gamePath": "",
+    "lobby": { "killCooldown": 25, "discussion": 30, "voting": 150, "commonTasks": 1, "shortTasks": 2, "longTasks": 1, "confirmEjects": true, "emergencyMeetings": 1 },
+    "maxMinutes": 20
+  },
   "seats": [
     { "id": "claude", "name": "Claude", "color": "orange", "provider": "anthropic", "model": "claude-opus-5-5", "label": "Claude Opus 5.5", "effort": "low", "meetingEffort": "medium" },
     { "id": "gpt", "name": "GPT", "color": "green", "provider": "openai", "model": "gpt-5-mini", "label": "GPT-5 mini" },

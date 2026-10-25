@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Among AI command line.
 //   node src/cli.js run [--mock] [--serve] [--config file] [--seed n] [--seats n] [--port n]
+//   node src/cli.js real [--mock] [--serve] [--config file] [--seats n] [--attach] [--keep-open]
+//                                               the real Among Us through AUBridge (docs/REAL_GAME.md)
 //   node src/cli.js replay [matchId] [--port n]
 //   node src/cli.js check [--config file]       one tiny request per seat: keys, model ids, latency
 //   node src/cli.js list
@@ -14,6 +16,9 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { createProvider, missingKeys } from './providers/index.js';
 import { runMatch } from './match/runner.js';
+import { runBridgeMatch } from './bridge/runner.js';
+import { openLobby, makeClients, newToken } from './bridge/launcher.js';
+import { validRealName } from './bridge/skeld.js';
 import { createHub, startServer, listMatches, readEvents } from './server/server.js';
 import { SCHEMAS } from './agents/prompts.js';
 import { FatalSeatError } from './agents/agent.js';
@@ -32,6 +37,8 @@ const { values: opt, positionals } = parseArgs({
     seed: { type: 'string' },
     seats: { type: 'string' },
     port: { type: 'string', default: '7777' },
+    attach: { type: 'boolean', default: false },
+    'keep-open': { type: 'boolean', default: false },
   },
 });
 const [command = 'help', arg] = positionals;
@@ -52,12 +59,14 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-async function run() {
+// Config, API keys, providers and the live viewer: the same for both bodies.
+async function prepare(check = () => {}) {
   const { config, seats } = loadConfig(configPath(), {
     mock: opt.mock,
     seed: opt.seed !== undefined ? Number(opt.seed) : undefined,
     seats: opt.seats ? Number(opt.seats) : undefined,
   });
+  check(config, seats);
   const keys = missingKeys(seats);
   keys.warnings.forEach((w) => console.warn(`warning: ${w} (the SDK will try \`ant auth login\` credentials)`));
   if (keys.errors.length) {
@@ -77,14 +86,17 @@ async function run() {
     console.log(`Viewer (live): http://localhost:${port}/`);
   }
   console.log(`Match ${matchId}: ${seats.map((s) => `${s.name} [${s.label}]`).join(', ')}`);
+  return {
+    config, seats, providers, matchId, memoryDir, hub,
+    dir: path.join(MATCHES, matchId),
+    publish: hub ? hub.publish : undefined,
+    log: (line) => console.log(line),
+  };
+}
 
+async function finished(play, { matchId, hub }) {
   try {
-    const result = await runMatch({
-      config, seats, providers, matchId, memoryDir,
-      dir: path.join(MATCHES, matchId),
-      publish: hub ? hub.publish : undefined,
-      log: (line) => console.log(line),
-    });
+    const result = await play();
     console.log(`\nLog:    ${path.join(result.dir, 'events.jsonl')}`);
     console.log(`Replay: node src/cli.js replay ${matchId}`);
   } catch (e) {
@@ -93,6 +105,42 @@ async function run() {
     process.exitCode = 1;
   }
   if (hub) console.log(`Viewer still running at http://localhost:${port}/ (Ctrl+C to quit)`);
+}
+
+async function run() {
+  const m = await prepare();
+  await finished(() => runMatch(m), m);
+}
+
+// The real game: one Among Us copy per seat, driven through AUBridge. Without --attach this opens
+// the copies itself (bridge.gamePath in the config, or AMONG_US_EXE); with --attach it uses copies
+// that are already in one lobby, on ports 47001.., started with the token in AUB_TOKEN.
+async function real() {
+  const m = await prepare((config, seats) => {
+    const bad = seats.filter((s) => !validRealName(s.name)).map((s) => `"${s.name}"`);
+    if (bad.length) {
+      console.error(`Names in the real game are 1-10 letters, digits, spaces, _ - or . : rename ${bad.join(', ')}.`);
+      process.exit(1);
+    }
+  });
+  const bridge = m.config.bridge ?? {};
+  const basePort = bridge.basePort ?? 47000;
+  let lobby;
+  if (opt.attach) {
+    const token = process.env.AUB_TOKEN;
+    if (!token) { console.error('--attach needs the copies\' token in AUB_TOKEN.'); process.exit(1); }
+    lobby = { clients: makeClients(m.seats, { token, basePort }), close: () => {} };
+  } else {
+    lobby = await openLobby({
+      gamePath: bridge.gamePath || process.env.AMONG_US_EXE, seats: m.seats, token: newToken(), basePort,
+      joinDelayMs: bridge.joinDelayMs, log: m.log,
+    });
+  }
+  try {
+    await finished(() => runBridgeMatch({ ...m, clients: lobby.clients }), m);
+  } finally {
+    if (!opt['keep-open']) lobby.close();
+  }
 }
 
 async function replay() {
@@ -137,9 +185,9 @@ function list() {
   }
 }
 
-const commands = { run, replay, check, list };
+const commands = { run, real, replay, check, list };
 if (!commands[command]) {
-  console.log('Usage: node src/cli.js <run|replay|check|list> [--mock] [--serve] [--config file] [--seed n] [--seats n] [--port n]');
+  console.log('Usage: node src/cli.js <run|real|replay|check|list> [--mock] [--serve] [--config file] [--seed n] [--seats n] [--port n] [--attach] [--keep-open]');
 } else {
   await commands[command]();
 }
