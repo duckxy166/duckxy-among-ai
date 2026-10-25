@@ -1,6 +1,6 @@
 # Plan: the same brains in the real Among Us
 
-Status: **2026-10-25: BepInEx runs on our build, upstream AUBridge is ported, a scripted round passes
+Status: **2026-10-25: BepInEx runs on our build, upstream AUBridge is ported (`mod/AUBridge`), a scripted round passes
 with 4 copies, and `src/bridge/` lets the brains play the real game: `node src/cli.js real` played two
 whole games with 4 mock brains.** This page started as the plan for that second body (real game
 clients driven through a mod, with the brain layer unchanged) and now records how far it got.
@@ -57,7 +57,9 @@ So a bridge adapter only has to turn those events into `obs` lines and expose `v
 
 ## AUBridge port and lobby test (2026-10-25)
 
-The port is three renames, each checked against the decompiled interop (`ilspycmd`):
+The ported mod is in [mod/AUBridge](../mod/README.md) (upstream MIT code by Tartaluga, with build steps
+and the full list of changes). The port is three renames, each checked against the decompiled interop
+(`ilspycmd`):
 
 | Upstream (Epic 2026.6.5) | Itch 2026.9.29 |
 |---|---|
@@ -147,6 +149,7 @@ Live runs on the itch build, 4 copies, mock brains (`--mock`, lab config with ki
 |---|---|---|
 | 1 (09:23) | Pink (impostor) sabotaged at 68 s, killed Blue at 92 s and reported; Red was voted out (not the impostor); impostors win by vote at 127 s | no crash, no rejected action, no warning; 38 decisions; Thai chat sent without errors |
 | 2 (09:31), after the review fixes | Red (impostor) killed Green alone in Cafeteria at 13 s and reported; everyone skipped; play went on; Red killed Blue in Storage; impostors win by kill at 99 s | the log reads `vote_result → meeting_end → kill → game_over`; all 3 living seats decided again with reason `meeting_over`; each copy voted only after its own voting opened (meeting at 15 s, discussion 40 s, votes at 61 s); no seat decided twice within 0.5 s; no rejected action |
+| 3 (09:39), mod built from `mod/AUBridge` | Green (impostor) sabotaged the reactor at 16 s; all three crewmates chose `fix` and reached Reactor 20 s before the deadline, but all three held console 1 and nobody held console 0; impostors win by sabotage at 47 s | the mod's match log and nav cache now land in `BepInEx/AUBridge/games/`; found two bridge bugs, fixed after this run: the sabotage type was read from `type` (the mod sends it as `kind`), and memory lines used the mod's `t`, which starts about 9 s before the match clock |
 
 Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
 
@@ -162,6 +165,9 @@ Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
 
 Still open:
 
+- Reactor fixes are not spread out. `act fix` without an `id` sends each crewmate to its nearest console,
+  so crewmates who start fixing at once from the same side all hold the same one (run 3). The mod accepts
+  `fix {type, id}`; the runner should hand out consoles 0 and 1 in turn.
 - Whether the game's chat font shows Thai. The text reaches the game without errors, but the chat window
   only opens on a click, so no screenshot shows it yet.
 - Real models: real time means slow models leave their player idle. Not measured yet.

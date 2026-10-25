@@ -144,9 +144,10 @@ Memories, prompts, the event log and the viewer are the same as in the simulator
 
 What you need:
 
-- Among Us on Windows with BepInEx 6 (IL2CPP) and the **AUBridge** mod from
-  [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) in its `BepInEx/plugins`.
-  The itch.io build 2026.9.29 needs the small port described in [docs/REAL_GAME.md](docs/REAL_GAME.md).
+- Among Us on Windows with BepInEx 6 (IL2CPP) and the **AUBridge** mod in its `BepInEx/plugins`.
+  [mod/AUBridge](mod/README.md) is AUBridge ported to the itch.io build 2026.9.29, with build steps;
+  for the Epic 2026.6.5 build use upstream's in
+  [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude).
 - `bridge.gamePath` in `arena.config.json` (or `AMONG_US_EXE`) pointing at `Among Us.exe`. The `bridge`
   block in `arena.config.example.json` shows the lobby options.
 - Seat names of 1-10 letters or digits (the game's limit), and 4 or more seats. The game allows
@@ -170,14 +171,20 @@ Among AI was created by **Duckxy** (YouTube [@LDuckxy](https://www.youtube.com/@
 
 The idea of real AI players with honest vision, a brain/body split and memory between matches was
 inspired by [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) (MIT), which runs
-Claude agents inside the real game through a BepInEx mod. `src/bridge/` talks to its AUBridge mod over
-the mod's own protocol. No code was copied from it.
+Claude agents inside the real game through a BepInEx mod.
+
+- **`mod/AUBridge` is that project's AUBridge mod, written by Tartaluga** (MIT), ported to the itch.io
+  build by Duckxy. [mod/LICENSE](mod/LICENSE) keeps the original copyright notice and
+  [mod/README.md](mod/README.md) lists every change.
+- Everything else (`src/`, `web/`, `test/`) is written for this repository; `src/bridge/` talks to
+  AUBridge over the mod's own protocol.
 
 ## License
 
-[MIT](LICENSE) © 2026 Duckxy. Among Us is a trademark of Innersloth LLC. This is a fan-made AI
-experiment, not affiliated with or endorsed by Innersloth. No game code or assets are included; the map
-is drawn from scratch.
+[MIT](LICENSE) © 2026 Duckxy, except `mod/AUBridge`: MIT © 2026 Tartaluga, modifications © 2026 Duckxy
+([mod/LICENSE](mod/LICENSE)). Among Us is a trademark of Innersloth LLC. This is a fan-made AI
+experiment, not affiliated with or endorsed by Innersloth. No game code or assets are included (the mod
+is built against your own copy of the game); the simulator's map is drawn from scratch.
 
 ---
 

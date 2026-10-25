@@ -14,5 +14,10 @@ memory/**
 Among Us*/
 AmongUsItch/
 
+# The mod builds against assemblies from your own game folder (mod/README.md); never commit them
+mod/refs/
+mod/**/bin/
+mod/**/obj/
+
 .DS_Store
 Thumbs.db

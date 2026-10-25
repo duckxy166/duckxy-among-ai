@@ -34,9 +34,12 @@ node src/cli.js replay              # then open http://localhost:7777 to look at
   seed only replays simulator matches. `test/fake-bridge.js` stands in for the mod in tests: when you
   change what the bridge expects from AUBridge, change the fake the same way.
 - **Credit.** Keep the copyright line in `LICENSE`, the Credit section of the README and the credit in
-  the viewer footer.
+  the viewer footer. `mod/AUBridge` is upstream code (MIT, © Tartaluga): keep `mod/LICENSE`, the credit
+  in `mod/README.md` and the README's Acknowledgements, and add every change you make to the mod to the
+  "Changes from upstream" table in `mod/README.md`.
 - No game files, assets or code from Among Us; no API keys, `.env`, `arena.config.json`, `matches/` or
-  `memory/*.md` in git.
+  `memory/*.md` in git. The mod builds against `mod/refs/` (BepInEx and interop assemblies made from the
+  user's own game): never commit `mod/refs/`, `bin/` or `obj/`.
 
 ## Style
 
@@ -44,3 +47,7 @@ Plain JavaScript ES modules on Node 20.12+, no build step, no framework in `web/
 dependencies (`@anthropic-ai/sdk`, `openai`), imported lazily so mock runs work without them; ask before
 adding a third. Comments explain why, not what. Instructions to the models stay in English; text players
 read in their memory comes from `src/i18n.js` (Thai and English).
+
+`mod/AUBridge` is C# (BepInEx 6 IL2CPP plugin, net6.0), built with `dotnet build` as `mod/README.md`
+describes. `npm test` does not cover it: after changing the mod, build it, put the DLL in the game and play
+a match with `node src/cli.js real --mock --seats 4`.
