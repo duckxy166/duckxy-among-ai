@@ -102,7 +102,10 @@ export async function startFakeShip({
     ship.meeting = null;
     ship.phase = 'voting_result';
     all('meeting_ended', { ejected: out?.name ?? null, tie, ...(out ? { wasImpostor: isImp(out) } : {}) });
-    if (out) out.alive = false;
+    if (out) {
+      out.alive = false;
+      ship.sab?.held.delete(out.name); // the dead hold no reactor panel
+    }
     checkWin();
     setTimeout(() => {
       if (ship.over) return;
@@ -148,6 +151,7 @@ export async function startFakeShip({
         const v = near(p).find((o) => o.name === a.target);
         if (!v) return err('target not visible');
         v.alive = false;
+        ship.sab?.held.delete(v.name); // the dead hold no reactor panel
         ship.bodies.push({ name: v.name, room: p.room });
         push(p, 'kill_done', { victim: v.name, room: p.room });
         push(v, 'you_died', { cause: 'killed', killer: p.name });
