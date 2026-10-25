@@ -21,6 +21,8 @@ changes below are by Duckxy under the same license. Upstream's protocol specs (`
 | `Game.cs` `Start()` | after `BeginGame()`, call `ReallyBegin(false)` when `GameSizePopup` is up | with 4 players the game asks "5 or more players is recommended" and waits for a click |
 | `GamePatches.cs` `PCastVote` | the postfix takes `InnerNet.PlayerId` instead of `byte` | with `byte` Harmony emits invalid IL, `CastVote` breaks and no vote counts |
 | `Events.cs`, `Nav.cs`, `Body.cs` | match log and nav cache go to `<game>/BepInEx/AUBridge/games/` | upstream wrote to `D:\AmongUs-tools\games`, a folder on its author's PC |
+| `Actions.cs` `VentsForState` | every vent in `state.vents` (and the one the impostor is inside) lists `to`: its neighbours' ids and rooms | the brains pick a vent by the room it leads to |
+| `Game.cs` `Configure()` | also turns off `RoleTypes.Judge` and `RoleTypes.SpiritGuide` | new in 2026.9.29; nobody can press their buttons |
 
 Details and test results: [docs/REAL_GAME.md](../docs/REAL_GAME.md).
 
