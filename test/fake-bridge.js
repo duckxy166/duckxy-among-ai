@@ -18,9 +18,10 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
   }));
   const byName = (n) => players.find((p) => p.name === n);
   const isImp = (p) => p.role === 'impostor';
-  const push = (p, type, fields = {}) => {
+  // Like the mod's Events.Add: a field called `type` is renamed `kind`.
+  const push = (p, type, { type: kind, ...fields } = {}) => {
     p.seq++;
-    p.events.push({ seq: p.seq, t: now(), type, ...fields });
+    p.events.push({ seq: p.seq, t: now(), type, ...fields, ...(kind !== undefined ? { kind } : {}) });
     const w = p.waiters;
     p.waiters = [];
     w.forEach((f) => f());

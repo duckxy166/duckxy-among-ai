@@ -185,6 +185,11 @@ test('a seat turns bridge events into memory lines and actions into act commands
   assert.deepEqual(emitted.find((e) => e.type === 'arrive'), { type: 'arrive', t: 12, p: 'red', room: 'Navigation', ghost: false });
   assert.match(memory.entries.at(-1).text, /Arrived at Navigation — saw: Blue/);
 
+  // The mod sends a sabotage's type as `kind`; memory lines carry the match clock, not the mod's `t`.
+  seat.onEvent({ type: 'sabotage', t: 99, kind: 'reactor' });
+  assert.match(memory.entries.at(-1).text, /^Reactor meltdown!/);
+  assert.equal(memory.entries.at(-1).t, 12);
+
   const ids = seat.legalActions().map((a) => a.id);
   for (const id of ['move:O2', 'fake:3', 'follow:Blue', 'kill:Blue', 'sabotage:lights', 'emergency']) assert.ok(ids.includes(id), id);
   for (const id of ['move:Navigation', 'fake:4', 'task:3', 'fix', 'report']) assert.ok(!ids.includes(id), id);

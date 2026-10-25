@@ -136,8 +136,10 @@ export class BridgeSeat {
 
   // ------------------------------------------------------------------ events from the copy
 
+  // Field names as the mod sends them: an event field called `type` arrives as `kind` (the event's own
+  // name is `type`), and the mod's `t` starts before the intro ends, so memory uses the match clock.
   onEvent(e) {
-    const t = e.t ?? this.match.now();
+    const t = this.match.now();
     const room = roomFromBridge(e.room);
     const plan = this.plan;
     switch (e.type) {
@@ -216,13 +218,13 @@ export class BridgeSeat {
         break;
       case 'sabotage': {
         const secs = Math.round(this.state?.sabotage?.timer ?? 30);
-        const key = e.type === 'lights' && this.role === 'impostor' ? 'sab_lights_imp' : `sab_${e.type}`;
+        const key = e.kind === 'lights' && this.role === 'impostor' ? 'sab_lights_imp' : `sab_${e.kind}`;
         this.note(t, 'sabotage', key, { secs }, { interrupt: this.role !== 'impostor' });
         break;
       }
       case 'sabotage_fixed':
-        this.note(t, 'sabotage', `fixed_${e.type}`);
-        this.match.onSabotageFixed(e.type);
+        this.note(t, 'sabotage', `fixed_${e.kind}`);
+        this.match.onSabotageFixed(e.kind);
         if (plan?.kind === 'fix') this.endPlan(plan);
         break;
       case 'fix_finished':
