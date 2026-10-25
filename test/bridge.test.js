@@ -41,7 +41,8 @@ function scripted(seat, prompts, crewVote = 'Pink') {
         const again = view.reason === 'meeting_over' ? view.legal.find((a) => a.id.startsWith('kill:'))?.id : undefined;
         const kill = can('kill:Green') ? 'kill:Green' : again;
         const action = role === 'impostor' ? kill ?? 'wait:15' : can('report') ? 'report' : 'wait:15';
-        out = { secret_thought: thought, action, note: '' };
+        const line = seat.id === 'blue' && view.reason === 'start' ? 'Red, keep an eye on Pink' : '';
+        out = { secret_thought: thought, action, say: line, note: '' };
       } else if (kind === 'speak') {
         out = role === 'impostor'
           ? { secret_thought: thought, chat_message: 'not me, I was doing tasks the whole time', suspect: 'none' }
@@ -96,6 +97,12 @@ test('a scripted round through the bridge: kill, report, chat, vote, crew win', 
     assert.ok(mem('green').entries.some((e) => e.kind === 'you_died'));
     assert.ok(!mem('pink').entries.some((e) => e.kind === 'saw_kill'));
     assert.ok(mem('red').meetings[0].includes('Pink was ejected (an Impostor)'));
+    // Talking on the ship: every copy that shows Blue hears the line, and Blue learns who did.
+    assert.ok(of('say').find((e) => e.p === 'blue').heard.includes('red'));
+    const heard = mem('red').entries.find((e) => e.kind === 'heard');
+    assert.equal(heard.text, 'Blue said: "Red, keep an eye on Pink"');
+    assert.equal(heard.data.toMe, true);
+    assert.match(mem('blue').entries.find((e) => e.kind === 'you_said').text, /heard by .*Red/);
     // A dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
     assert.ok(ship.ship.calls.some((c) => c.who === 'Green' && c.do === 'autopilot'));
     for (const [id, list] of prompts) {
@@ -267,6 +274,15 @@ test('a seat turns bridge events into memory lines and actions into act commands
   seat.onEvent({ type: 'arrived', t: 25, room: 'Admin' });
   assert.equal(seat.plan, null);
   assert.equal(seat.needs, null);
+
+  // Asked again for the task it is doing (a wake-up mid-task), the body carries on: no second do_task,
+  // which would restart the walk and the wait in the game.
+  await seat.execute('fake:3');
+  const sent = calls.length;
+  seat.plan.stale = true;
+  await seat.execute('fake:3');
+  assert.equal(calls.length, sent);
+  assert.equal(seat.plan.stale, false);
 
   await seat.execute('kill:Blue');
   assert.deepEqual(calls.at(-1), { do: 'kill', target: 'Blue' });

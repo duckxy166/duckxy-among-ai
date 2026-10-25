@@ -58,9 +58,9 @@ test('sloppy action ids and names still resolve', () => {
   assert.equal(matchName('SKIP', ['Claude'], ['skip']), 'skip');
 });
 
-test('JSON is read even when wrapped in a code fence', () => {
+test('JSON is read even when wrapped in a code fence, and a missing say means silence', () => {
   const text = '```json\n{"secret_thought": "ok", "action": "wait:5", "note": ""}\n```';
-  assert.deepEqual(parseJson(text, SCHEMAS.roam.schema), { secret_thought: 'ok', action: 'wait:5', note: '' });
+  assert.deepEqual(parseJson(text, SCHEMAS.roam.schema), { secret_thought: 'ok', action: 'wait:5', say: '', note: '' });
   assert.equal(parseJson('{"secret_thought": "no action"}', SCHEMAS.roam.schema), null);
   assert.equal(parseJson('not json', SCHEMAS.roam.schema), null);
 });

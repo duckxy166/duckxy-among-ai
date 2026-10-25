@@ -23,6 +23,7 @@ export const SCHEMAS = {
     schema: obj({
       secret_thought: THOUGHT,
       action: str('Exactly one action id from the list, for example "move:Electrical".'),
+      say: str('Words you say out loud right now; only the players who can see you hear them. An empty string means you stay silent.'),
       note: str('A fact worth remembering for the next meeting, or an empty string.'),
     }),
   },
@@ -72,18 +73,19 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 - You only know what YOU saw. Your memory log is your evidence and nobody else can read it.
 - You see players in your room and in the corridor you walk. When the lights are out, crewmates only see shadows in their own room.
 - Visual tasks (Submit Scan, Clear Asteroids, Empty Garbage, Prime Shields) play an animation: watching one proves that player is a crewmate. An Impostor can stand at a task, but no animation plays.`}
+- TALKING ON THE SHIP: outside meetings you can speak with "say". Only the players who ${realGame ? 'have you on their screen' : 'can see you'} at that moment hear it${realGame ? ', like proximity voice chat (the game itself shows nothing)' : ' (in the dark, crewmates hear a voice from a shadow and cannot tell whose)'}. Your memory log tells you who heard you, and when someone you named was out of earshot. To talk to someone who is not here, walk to where your log last saw them, or follow them, and speak when you see them. Talk like a real player: split up the work ("I'll fix lights, you keep doing tasks"), ask where someone is going, check an alibi, call out what you saw, answer when someone talks to you, or lie. Stay silent most of the time and talk when it matters. Everything said is remembered and can be quoted at a meeting.
 - Report a body you can see, or press the emergency button in Cafeteria (${rules.emergenciesPerPlayer} per player). At a meeting everyone learns who is dead, discusses, then votes a player out or skips. The most votes ejects; a tie or a skip majority ejects nobody.${rules.confirmEjects ? ' The game reveals whether the ejected player was an Impostor.' : ''}
 - Dead players never speak again.
 
 TWO VOICES: every reply has both
 1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
-2. The public part (action, chat_message, vote): what the other players see. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. chat_message is 1-2 short sentences${realGame ? ' and at most 100 characters (the game cuts the rest)' : ''}, like a real player on voice chat: no lists, no markdown, no stage directions, and never mention your secret thoughts.
+2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
+Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is 1-2 short sentences${realGame ? ' and at most 100 characters (the game cuts the rest)' : ''}, like a real player on voice chat: no lists, no markdown, no stage directions, and never mention your secret thoughts.
 
 ALIBI DISCIPLINE
 Claims about where you were, who you saw and when must come from your memory log, with the times. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
 
-LANGUAGE: write secret_thought, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
+LANGUAGE: write secret_thought, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
 ${persona ? `\nYOUR PERSONALITY: ${persona}\n` : ''}${longTerm ? `\nYOUR MEMORY FROM PAST MATCHES (only you can read this):\n${longTerm}\n` : ''}
 Reply with one JSON object only, with exactly the fields you are asked for.`;
 }
@@ -99,6 +101,7 @@ const REASONS = {
   lost_sight: 'you lost the player you were following',
   meeting_over: 'the meeting just ended and everyone is back in Cafeteria',
   stuck: 'you got stuck on the way',
+  heard: 'someone near you just spoke to you, answered you, or spoke during a sabotage (the newest lines of your memory log say what): answer with say if you want, and choose what to do',
   sabotage_ready: 'your sabotage is ready again',
 };
 
@@ -112,6 +115,8 @@ export function roamPrompt(view, memory) {
   const seen = view.visible.map((v) => `${v.name} (${v.where}, ${v.doing})`);
   if (view.shadows) seen.push(`${view.shadows} shadow(s)`);
   out.push(`You see: ${seen.length ? seen.join('; ') : 'nobody'}.`);
+  const ears = [...view.visible.map((v) => v.name), ...(view.shadows ? [`${view.shadows} shadow(s)`] : [])];
+  if (!view.dead) out.push(ears.length ? `If you say something now, it is heard by: ${ears.join(', ')}.` : 'Nobody is near enough to hear you right now.');
   if (view.bodies.length) out.push(`DEAD BODY HERE: ${view.bodies.join(', ')}.`);
   if (view.role === 'crew') {
     out.push(`Your tasks: ${view.tasks.map((t) => `${t.done ? '[done]' : '[todo]'} ${t.name} @ ${t.room}`).join('; ')}.`);
@@ -127,7 +132,7 @@ export function roamPrompt(view, memory) {
   out.push(`\nYOUR NOTES TO SELF:\n${memory.renderNotes()}`);
   out.push(`\nYOUR RECENT SECRET THOUGHTS:\n${memory.renderThoughts(3)}`);
   out.push(`\nACTIONS (pick one and copy its id exactly):\n${view.legal.map((a) => `- ${a.id}  (${a.label})`).join('\n')}`);
-  out.push('\nReply as JSON: {"secret_thought": "...", "action": "<id>", "note": "<short fact for later, or empty>"}');
+  out.push('\nReply as JSON: {"secret_thought": "...", "action": "<id>", "say": "<out loud to whoever can see you, or empty>", "note": "<short fact for later, or empty>"}');
   return out.join('\n');
 }
 

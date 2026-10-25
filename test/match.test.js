@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runMatch } from '../src/match/runner.js';
 import { createProvider } from '../src/providers/index.js';
+import { createMock } from '../src/providers/mock.js';
 
 const COLORS = ['red', 'blue', 'green', 'pink', 'orange', 'yellow', 'cyan', 'purple'];
 const SEATS = COLORS.map((c) => ({ id: c, name: c[0].toUpperCase() + c.slice(1), color: c, provider: 'mock', label: 'mock' }));
@@ -28,8 +29,19 @@ test('an 8-player mock match plays to the end and writes its files', async () =>
   const stats = r.events.at(-1);
   assert.equal(stats.type, 'stats');
   assert.ok(Object.values(stats.seats).every((s) => s.calls > 0));
-  const roles = r.events.find((e) => e.type === 'match_start').players.map((p) => p.role);
-  assert.equal(roles.filter((x) => x === 'impostor').length, 2);
+  const start = r.events.find((e) => e.type === 'match_start');
+  assert.equal(start.players.filter((p) => p.role === 'impostor').length, 2);
+  // Mock players talk on the ship; a line reaches exactly the players listed as hearing it.
+  const says = r.events.filter((e) => e.type === 'say');
+  assert.ok(says.length > 0);
+  const nameOf = (id) => start.players.find((p) => p.id === id).name;
+  for (const s of says) {
+    for (const [id, a] of r.agents) {
+      const who = s.anon.includes(id) ? null : nameOf(s.p);
+      const got = a.memory.entries.some((m) => m.kind === 'heard' && m.t === s.t && m.data.text === s.text && m.data.who === who);
+      assert.equal(got, s.heard.includes(id), `${id} and "${s.text}" at ${s.t}`);
+    }
+  }
 });
 
 test('the same seed replays the same match', async () => {
@@ -53,4 +65,18 @@ test('memories are separate: no prompt ever contains another player\'s secret th
   }
   // ...while each player does get its own past thoughts back.
   assert.ok([...prompts].some(([id, list]) => list.some((u) => u.includes(`[mock:${id}#`))));
+});
+
+test('a mock crewmate asked a question during a reactor meltdown answers on the way to fix it', async () => {
+  const seat = { id: 'blue', name: 'Blue' };
+  const mock = createMock(seat, 1);
+  const view = {
+    t: 10, role: 'crew', reason: 'heard', room: 'Admin', visible: [{ name: 'Red' }], bodies: [],
+    sabotage: { kind: 'reactor', secondsLeft: 30 }, legal: [{ id: 'fix' }, { id: 'task:wires' }, { id: 'move:Storage' }],
+  };
+  const evidence = [{ t: 10, kind: 'heard', who: 'Red', text: 'Blue ไปไหนมา', toMe: true }];
+  const res = await mock.complete({ context: { kind: 'roam', view, evidence, seat, role: 'crew', partners: [] } });
+  const out = JSON.parse(res.text);
+  assert.equal(out.action, 'fix');
+  assert.match(out.say, /ทำ task อยู่/);
 });

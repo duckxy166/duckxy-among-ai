@@ -9,6 +9,7 @@ import { clock } from '../i18n.js';
 const EVIDENCE = new Set([
   'saw_body', 'saw_kill', 'saw_vent', 'saw_task_visual', 'saw_task_fake', 'opportunity',
   'you_killed', 'you_vented', 'you_sabotaged', 'sabotage', 'task_done', 'meeting', 'meeting_result',
+  'heard', 'you_said',
 ]);
 
 const line = (e) => `[${clock(e.t)}] ${e.text}`;
@@ -65,6 +66,7 @@ export class EpisodicMemory {
       if (e.kind === 'saw_task_fake') facts.push({ t: e.t, kind: 'fake', who: d.who });
       if (e.kind === 'saw_task_visual') facts.push({ t: e.t, kind: 'proof', who: d.who });
       if (e.kind === 'saw_body') facts.push({ t: e.t, kind: 'body', who: d.body, room: d.room });
+      if (e.kind === 'heard') facts.push({ t: e.t, kind: 'heard', who: d.who ?? null, text: d.text, toMe: !!d.toMe });
       if (e.kind === 'arrived' || e.kind === 'saw_player') {
         for (const who of d.saw ?? (d.who ? [d.who] : [])) facts.push({ t: e.t, kind: 'seen', who, room: d.room });
       }
