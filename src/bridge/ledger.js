@@ -71,14 +71,15 @@ export class MatchLedger {
 
   // The reactor needs both panels held at once, and `fix` without a console id walks to the nearest
   // one, so crewmates starting from the same side all held one panel (live run 3). Give the panel
-  // that fewer living others hold, 0 on a tie; a seat asking again keeps its own. Other sabotages
-  // get undefined: the mod's own choice.
+  // that fewer living others hold. On a tie a seat asking again keeps its own (walking across wastes
+  // the countdown), anyone else gets 0. Other sabotages get undefined: the mod's own choice.
   reactorPanel(id, kind) {
     if (kind !== 'reactor') return undefined;
+    const mine = this.panels.get(id);
     this.panels.delete(id);
     const held = [0, 0];
     for (const [other, panel] of this.panels) if (this.alive(other)) held[panel]++;
-    const panel = held[1] < held[0] ? 1 : 0;
+    const panel = held[0] === held[1] ? mine ?? 0 : held[1] < held[0] ? 1 : 0;
     this.panels.set(id, panel);
     return panel;
   }

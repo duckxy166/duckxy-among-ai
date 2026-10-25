@@ -34,6 +34,20 @@ test('a seat that lets go of its panel or dies no longer counts', () => {
   assert.equal(ledger.reactorPanel('blue', 'reactor'), 1);
 });
 
+test('on a tie a seat keeps its panel; it moves only to an emptier one', () => {
+  const { ledger } = open();
+  ledger.sabotaged('pink', 'reactor');
+  ledger.reactorPanel('red', 'reactor'); // 0
+  ledger.reactorPanel('blue', 'reactor'); // 1
+  ledger.releasePanel('red');
+  assert.equal(ledger.reactorPanel('blue', 'reactor'), 1, 'alone on panel 1: Blue does not walk over to 0');
+  ledger.reactorPanel('red', 'reactor'); // 0
+  ledger.reactorPanel('green', 'reactor'); // one each: 0
+  ledger.releasePanel('blue');
+  // Panel 1 is empty now and Green shares panel 0 with Red: Green moves.
+  assert.equal(ledger.reactorPanel('green', 'reactor'), 1);
+});
+
 test('panels start over when the reactor is fixed or a new sabotage starts; other sabotages take the mod\'s choice', () => {
   const { ledger } = open();
   ledger.sabotaged('pink', 'reactor');

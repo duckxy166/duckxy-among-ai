@@ -347,13 +347,14 @@ test('a seat holds its reactor panel only while it is fixing', async () => {
   await seat.execute('fix'); // decides `fix` again: same panel
   assert.equal(calls.at(-1).id, 0);
   await seat.execute('move:Admin'); // walks off: panel 0 is free again
-  assert.equal(ledger.reactorPanel('blue', 'reactor'), 0);
+  ledger.releasePanel('blue');
+  assert.equal(ledger.reactorPanel('green', 'reactor'), 0, 'nobody holds a panel');
 
   // A fix order the copy refuses holds nothing either.
   refuse = true;
   await seat.execute('fix');
   assert.equal(calls.at(-1).id, 1);
-  assert.equal(ledger.reactorPanel('green', 'reactor'), 1);
+  assert.equal(ledger.reactorPanel('blue', 'reactor'), 1, 'only Green holds a panel');
 });
 
 test('an impostor vents through its copy: walk to the vent, in, one hop, out', async () => {
