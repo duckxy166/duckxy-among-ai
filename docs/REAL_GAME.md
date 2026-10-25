@@ -184,8 +184,9 @@ then do tasks or report.
 | 5 (10:43), panels from `MatchLedger` | Pink (impostor) sabotaged the reactor at 10.3 s; Red, Green and Blue chose `fix` at 10.4–10.5 s and were sent panels 0, 1 and 0; fixed at 29.2 s. Pink killed Red in Storage at 74 s (Blue in view), nobody reported; crew win by tasks at 128 s | BepInEx logs: Red held console 0 and Green console 1; the reactor was fixed before Blue reached its console. No match error, no warning. The game had the lab build of the mod from the vents work (10:18), not the build used in runs 3–4 |
 
 Fixed after run 3: reactor fixes are spread out. `MatchLedger` (`src/bridge/ledger.js`) sends each
-crewmate that chooses `fix` to the panel fewer living others hold, with `fix {type, id}`. A seat keeps
-its panel when it chooses `fix` again and lets go of it on any other order, as the mod's body does.
+crewmate that chooses `fix` to the panel fewer living others hold, with `fix {type, id}`. A seat that
+chooses `fix` again keeps its panel unless the other one has fewer holders (then its own stays covered
+and the empty one needs it), and lets go of it on any other order, as the mod's body does.
 
 Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
 

@@ -97,7 +97,8 @@ goes into every player's memory.
 - **The ledger** (`ledger.js`, `MatchLedger`): what the runner pieces together from every copy. Who is
   alive (any copy may report a death first), who is known dead after a meeting, where bodies fell, who
   had the killer in view, the active sabotage, and which reactor panel each fixing seat holds: the panel
-  fewer living others hold, kept while that seat's plan is `fix`. It writes `kill`, `sabotage` and
+  fewer living others hold, kept while that seat's plan is `fix` unless the other panel has fewer
+  holders (moving then never leaves a panel empty). It writes `kill`, `sabotage` and
   `sabotage_fixed`. A seat reads only known dead, its own liveness and its own panel from it.
 - **Meetings**: the seats speak in turns through the game chat (100 characters, cut at a word), then each
   waits until its own copy opens voting and votes. The game decides the result; the runner writes the
