@@ -35,6 +35,10 @@ const BRAINS = {
       return say('report', `เจอศพ ${view.bodies[0]} ต้องรีบรายงาน`, `เจอศพ ${view.bodies[0]} ที่ ${view.room}`);
     }
     if (view.role === 'impostor') {
+      if (view.dead) {
+        const sabs = all('sabotage:');
+        return sabs.length && rng.chance(0.5) ? say(rng.pick(sabs), 'ตายแล้วแต่ยังป่วนลูกเรือได้') : say('wait:15', 'รอจังหวะให้คู่หูก่อน');
+      }
       const kills = all('kill:');
       if (kills.length && view.visible.length === 1) return say(kills[0], `${kills[0].slice(5)} อยู่คนเดียว ไม่มีพยาน ลงมือเลย`);
       const vents = all('vent:');

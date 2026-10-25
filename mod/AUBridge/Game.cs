@@ -753,7 +753,8 @@ public static class Game
             if (visual.HasValue) t.SetBool(BoolOptionNames.VisualTasks, visual.Value);
             if (anon.HasValue) t.SetBool(BoolOptionNames.AnonymousVotes, anon.Value);
             if (ghostT.HasValue) t.SetBool(BoolOptionNames.GhostsDoTasks, ghostT.Value);
-            foreach (var role in new[] { RoleTypes.Scientist, RoleTypes.Engineer, RoleTypes.GuardianAngel, RoleTypes.Shapeshifter, RoleTypes.Noisemaker, RoleTypes.Phantom, RoleTypes.Tracker, RoleTypes.Detective, RoleTypes.Viper })
+            // every special role off; Judge and SpiritGuide are new in 2026.9.29
+            foreach (var role in new[] { RoleTypes.Scientist, RoleTypes.Engineer, RoleTypes.GuardianAngel, RoleTypes.Shapeshifter, RoleTypes.Noisemaker, RoleTypes.Phantom, RoleTypes.Tracker, RoleTypes.Detective, RoleTypes.Viper, RoleTypes.Judge, RoleTypes.SpiritGuide })
                 t.roleOptions.SetRoleRate(role, 0, 0);
         }
         var lo = GameManager.Instance.LogicOptions;

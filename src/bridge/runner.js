@@ -138,17 +138,18 @@ export async function runBridgeMatch({
       if (match.over || s.stopped) break;
       const why = s.needs;
       s.needs = null;
-      if (!why || match.meeting || !s.alive) continue;
+      if (!why || match.meeting || !s.acts) continue;
       s.deciding = true;
       if (s.plan) s.plan.stale = true; // the body keeps doing it until the new action is sent
       try {
         const st = await s.refresh();
-        if (!st || st.phase !== 'tasks' || !s.alive || match.meeting) continue;
+        if (!st || st.phase !== 'tasks' || !s.acts || match.meeting) continue;
         const view = s.view(why);
+        if (!view.legal.length) continue; // a ghost impostor with no sabotage ready
         emit({ type: 'thinking', players: [s.id] });
         const r = await agent.decideRoam(view);
         emit({ type: 'decision', p: s.id, reason: why, thought: r.thought, action: r.action, raw: r.raw, note: r.note, error: r.error, ms: r.ms, model: r.model });
-        if (match.meeting || match.over || !s.alive) continue;
+        if (match.meeting || match.over || !s.acts) continue;
         await s.execute(r.action);
       } catch (e) {
         if (e instanceof FatalSeatError) { fail(e); break; }
@@ -305,7 +306,9 @@ export async function runBridgeMatch({
     list.forEach((s) => s.pump());
 
     const conf = { impostors, ...lobby };
-    await host.client.call('configure', conf);
+    const configured = await host.client.call('configure', conf);
+    // `configure` turns off the special roles it knows; one a newer build adds would still be on.
+    if (configured.options?.anyRoles) warn('the lobby still has special roles on, and the brains cannot use their buttons');
     await sleep(1000);
     await host.client.call('start');
     log('Started; waiting for every copy to finish the intro...');

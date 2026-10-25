@@ -135,14 +135,41 @@ In short: AUBridge events become memory lines with the simulator's kinds, `view(
 are built from the copy's `state`, actions become `act` calls, every seat decides on its own in real
 time, and meetings go through the real chat and vote.
 
-Not wired up yet: vents (the mod has `vent`, the brains are not offered it), AUBridge's reflexes, and
-the in-game `label` command. The impostor count is lowered to what the game allows (2 from 7 players).
+Vents: each vent in the mod's `state.vents` lists where it leads (`to`: neighbour ids and rooms), and an
+impostor is offered `vent:<Room>` for every room one hop from a vent in its room. The seat walks to the
+vent, then sends `vent {enter}`, `vent {to}` and `vent {enter:false}`, checking each step in `state`.
+A dead impostor keeps sabotaging, as in the game: it decides only when a sabotage is ready. `configure`
+also turns off Judge and Spirit Guide (new in 2026.9.29), and the runner warns if the host still reports
+any special role on.
+
+Live, 4 copies (2026-10-25): `configure` replies `anyRoles: false`. In a mock match the impostor chose
+`vent:Cafeteria` from Admin and the game refused the hop with "Player was still in the middle of
+animating into current vent; not allowed to move vents that fast": `inVent` reads true about 0.3 s after
+going in, before the jump animation ends. The seat now sends a refused vent step again (up to 8 times,
+0.4 s apart). A scripted check then vented Cafeteria → Admin → Cafeteria: each hop was refused once and
+went through 0.5 s later, the corridor vent (room `null`) was not offered, and the two crewmates in
+Cafeteria got `saw_vent` for going in and coming out.
+
+Live, 7 copies (2026-10-25, 2 impostors, same lobby settings):
+
+| Run | What happened | Checks |
+|---|---|---|
+| Mock brains | two meetings, every vote a skip (the mock crew only accuses after seeing a kill or vent); crew wins by tasks at 4:18 | no error, no rejected action; the impostors vented 3 times (Upper Engine → Reactor, Shields → Navigation, Lower Engine → Reactor) |
+| Scripted votes, before the fix | the crew votes out impostor Pink at 76 s; its ghost cut the lights 6 times | the ghost was woken only when its sabotage was ready, but each time it decided 2 to 5 more times within 0.2 s and the game took most of them: a copy that is not the host shows its own sabotage only once the host has it |
+| Scripted votes, after the fix | Red ejected at 76 s; its ghost cut the lights 6 times, each fixed within 3 to 13 s; crew wins by tasks at 4:54 | one decision and one sabotage per ready sabotage, all with reason `sabotage_ready`; no rejected action |
+
+The fix: after sending a sabotage, a seat counts it as on for 3 s or until its copy shows it.
+Seven copies used about 5.1 GB together (about 750 MB each); with the rest of this PC's load, available
+memory went down to 2.4 GB (commit 89 %) and CPU peaked at 59 %.
+
+Not wired up yet: AUBridge's reflexes and the in-game `label` command. The impostor count is lowered to
+what the game allows (2 from 7 players).
 
 Tests: `test/bridge.test.js` runs the runner against `test/fake-bridge.js`, a small fake of the mod (same
 protocol, events and state fields): a scripted kill → report → chat → vote → crew win, a meeting that
-ejects nobody followed by more play, a reactor fixed with both panels, a whole game with the mock brains,
-and the seat's event and action mapping and panel holding. `test/ledger.test.js` checks `MatchLedger`
-with plain calls.
+ejects nobody followed by more play, a reactor fixed with both panels, an ejected impostor sabotaging as
+a ghost, a whole game with the mock brains, a vent trip, and the seat's event and action mapping and
+panel holding. `test/ledger.test.js` checks `MatchLedger` with plain calls.
 
 Live runs on the itch build, 4 copies, lab config with kill cooldown 10 s. Runs 1–3 use the mock brains
 (`--mock`); runs 4–5 use scripted brains: the impostor sabotages the reactor once, crewmates fix it,
@@ -154,7 +181,7 @@ then do tasks or report.
 | 2 (09:31), after the review fixes | Red (impostor) killed Green alone in Cafeteria at 13 s and reported; everyone skipped; play went on; Red killed Blue in Storage; impostors win by kill at 99 s | the log reads `vote_result → meeting_end → kill → game_over`; all 3 living seats decided again with reason `meeting_over`; each copy voted only after its own voting opened (meeting at 15 s, discussion 40 s, votes at 61 s); no seat decided twice within 0.5 s; no rejected action |
 | 3 (09:39), mod built from `mod/AUBridge` | Green (impostor) sabotaged the reactor at 16 s; all three crewmates chose `fix` and reached Reactor 20 s before the deadline, but all three held console 1 and nobody held console 0; impostors win by sabotage at 47 s | the mod's match log and nav cache now land in `BepInEx/AUBridge/games/`; found two bridge bugs, fixed after this run: the sabotage type was read from `type` (the mod sends it as `kind`), and memory lines used the mod's `t`, which starts about 9 s before the match clock |
 | 4 (09:48), panels handed out by a counter | Blue (impostor) sabotaged the reactor at 10.4 s; Red, Pink and Green chose `fix` at 10.4–10.5 s; fixed at 23.6 s. Blue killed Pink at 58 s, Green reported, everyone skipped; crew win by tasks at 165 s | BepInEx logs: the three crewmates held consoles 0, 0 and 1. The counter gave a seat a new panel every time it asked, so a seat that chose `fix` again could leave a panel empty; replaced by `MatchLedger` before run 5 |
-| 5 (10:43), panels from `MatchLedger` | Pink (impostor) sabotaged the reactor at 10.3 s; Red, Green and Blue chose `fix` at 10.4–10.5 s and were sent panels 0, 1 and 0; fixed at 29.2 s. Pink killed Red in Storage at 74 s (Blue in view), nobody reported; crew win by tasks at 128 s | BepInEx logs: Red held console 0 and Green console 1; the reactor was fixed before Blue reached its console. No match error, no warning. The game had a newer lab build of the mod (vents work in progress), not this commit's `mod/AUBridge` |
+| 5 (10:43), panels from `MatchLedger` | Pink (impostor) sabotaged the reactor at 10.3 s; Red, Green and Blue chose `fix` at 10.4–10.5 s and were sent panels 0, 1 and 0; fixed at 29.2 s. Pink killed Red in Storage at 74 s (Blue in view), nobody reported; crew win by tasks at 128 s | BepInEx logs: Red held console 0 and Green console 1; the reactor was fixed before Blue reached its console. No match error, no warning. The game had the lab build of the mod from the vents work (10:18), not the build used in runs 3–4 |
 
 Fixed after run 3: reactor fixes are spread out. `MatchLedger` (`src/bridge/ledger.js`) sends each
 crewmate that chooses `fix` to the panel fewer living others hold, with `fix {type, id}`. A seat keeps
@@ -177,7 +204,9 @@ Still open:
 - Whether the game's chat font shows Thai. The text reaches the game without errors, but the chat window
   only opens on a click, so no screenshot shows it yet.
 - Real models: real time means slow models leave their player idle. Not measured yet.
-- 6 to 8 copies at once (memory and CPU on one PC), and vents.
+- 8 copies at once: 7 work (above), 8 would need roughly another 750 MB.
+- The mock brains rarely eject anybody in the real game, so a ghost impostor shows up only in the scripted
+  run.
 
 ## Steps
 

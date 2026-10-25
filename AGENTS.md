@@ -37,7 +37,7 @@ node src/cli.js replay              # then open http://localhost:7777 to look at
   `MatchLedger` (`src/bridge/ledger.js`, see CONTEXT.md). A seat may read from it only public facts
   (known dead), its own liveness and its own reactor panel; witnesses, body rooms and other seats'
   liveness go only to the event log. The seat tests in `test/bridge.test.js` check that a seat's view
-  has the simulator's fields and nothing more.
+  has the simulator's fields plus `dead` (its own liveness) and nothing more.
 - **Credit.** Keep the copyright line in `LICENSE`, the Credit section of the README and the credit in
   the viewer footer. `mod/AUBridge` is upstream code (MIT, © Tartaluga): keep `mod/LICENSE`, the credit
   in `mod/README.md` and the README's Acknowledgements, and add every change you make to the mod to the

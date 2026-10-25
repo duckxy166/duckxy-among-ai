@@ -102,7 +102,8 @@ goes into every player's memory.
 - **Meetings**: the seats speak in turns through the game chat (100 characters, cut at a word), then each
   waits until its own copy opens voting and votes. The game decides the result; the runner writes the
   same `vote_result` and public meeting record as the simulator.
-- **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot.
+- **Ghosts**: a dead crewmate's copy keeps doing tasks on AUBridge's autopilot. A dead impostor still
+  sabotages; its brain is asked only when a sabotage is ready.
 - **Tests** use `test/fake-bridge.js`, a small fake of the mod with the same protocol and events.
 
 ## Game rules in short

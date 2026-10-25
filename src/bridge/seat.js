@@ -8,6 +8,10 @@ import { ROOMS_REAL, roomToBridge, roomFromBridge, taskName, SABOTAGE_TYPES } fr
 
 const TICK_MS = 500;
 const REPORT_REACH = 1.0; // closer than this, report from where we stand; else walk to the body first
+const VENT_TRIES = 8; // a refused vent step is sent again this many times, 0.4 s apart
+const SABOTAGE_SHOWS = 3; // seconds a copy may take to show its own sabotage (see sabotageReady)
+// The dead keep no memory, except of their death and of what a ghost impostor still does itself.
+const GHOST_NOTES = new Set(['you_died', 'you_sabotaged', 'rejected']);
 
 export class BridgeSeat {
   // match: { lang, rules, now(), emit(event), warn(text), meeting, over, ledger (MatchLedger), onBridgeEvent(seat, e) }
@@ -27,6 +31,8 @@ export class BridgeSeat {
     this.needs = null;
     this.waiter = null;
     this._plan = null;
+    this.venting = null; // the in, hop, out steps of a vent plan, while they run
+    this.sabotageSentAt = -99;
     this.deciding = false;
     this.stopped = false;
     this.buffered = [];
@@ -89,10 +95,13 @@ export class BridgeSeat {
     }
   }
 
+  // A dead impostor still sabotages, as in the game; a dead crewmate's copy does tasks on autopilot.
+  get acts() { return this.alive || this.role === 'impostor'; }
+
   async ticker() {
     while (!this.stopped) {
       await sleep(TICK_MS);
-      if (this.match.over || this.match.meeting || !this.alive) continue;
+      if (this.match.over || this.match.meeting || !this.acts) continue;
       try { await this.tick(); } catch (e) { this.match.warn(`${this.name}: ${e.message}`); }
     }
   }
@@ -104,7 +113,7 @@ export class BridgeSeat {
 
   // `reason` is what the prompt says woke this player up (see REASONS in prompts.js).
   wake(reason) {
-    if (reason && (!this.alive || this.match.meeting || this.match.over)) return;
+    if (reason && (!this.acts || this.match.meeting || this.match.over)) return;
     if (reason) this.needs = reason;
     const w = this.waiter;
     this.waiter = null;
@@ -118,7 +127,7 @@ export class BridgeSeat {
 
   // One memory line, written the way the simulator's Game.note() writes it.
   note(t, kind, key, vars = {}, { data, interrupt = false } = {}) {
-    if (!this.alive && kind !== 'you_died') return;
+    if (!this.alive && !GHOST_NOTES.has(kind)) return;
     this.write({ t, kind, text: say(this.match.lang, key, vars), data });
     if (interrupt) this.wake(kind);
   }
@@ -166,6 +175,11 @@ export class BridgeSeat {
       case 'arrived':
         if (plan?.kind === 'move') this.endPlan(plan);
         if (plan?.kind === 'report') this.tryReport().catch((err) => this.match.warn(`${this.name}: report: ${err.message}`));
+        if (plan?.kind === 'vent' && !plan.stale && !this.venting) {
+          this.venting = this.ventThrough(plan)
+            .catch((err) => this.match.warn(`${this.name}: vent: ${err.message}`))
+            .finally(() => { this.venting = null; });
+        }
         break;
       case 'saw_player':
         this.seen.add(e.name);
@@ -265,6 +279,7 @@ export class BridgeSeat {
       t: Math.round(this.match.now()),
       you: this.name,
       role: this.role,
+      dead: !this.alive,
       location: room ?? say(this.match.lang, 'corridor'),
       room,
       walking: !!this.plan?.moving,
@@ -279,7 +294,7 @@ export class BridgeSeat {
       partners: this.partners,
       killCooldown: Math.ceil(me.killCooldown ?? 0),
       sabotageCooldown: Math.ceil(st.sabotage?.cooldown ?? 0),
-      vents: [],
+      vents: this.ventRoutes().map((r) => r.room),
       knownDead: this.match.ledger.knownDead(),
       emergencies: this.emergencies,
       legal: this.legalActions(),
@@ -288,7 +303,8 @@ export class BridgeSeat {
 
   legalActions() {
     const st = this.state;
-    if (!this.alive || !st || st.phase !== 'tasks') return [];
+    if (!this.acts || !st || st.phase !== 'tasks') return [];
+    if (!this.alive) return this.sabotageReady(st) ? GHOST_ACTIONS : [];
     const me = st.me ?? {};
     const here = roomFromBridge(me.room);
     const acts = [];
@@ -317,16 +333,45 @@ export class BridgeSeat {
           add(`kill:${v.name}`, `kill ${v.name} right now`);
         }
       }
-      if (!sab && (st.sabotage?.cooldown ?? 99) <= 0) {
+      for (const r of this.ventRoutes()) add(`vent:${r.room}`, `step into the vent here and come out in ${r.room} (anyone watching sees it)`);
+      if (this.sabotageReady(st)) {
         for (const type of SABOTAGE_TYPES) add(`sabotage:${type}`, `sabotage ${type}`);
       }
     }
     return acts;
   }
 
+  // A copy that is not the host shows its own sabotage only once the host has it, a moment later.
+  // Until then (3 s at most) it counts as on, or the brain would send it again (seen live: up to 5
+  // times within 0.2 s).
+  sabotageReady(st) {
+    if (st.sabotage?.active || (st.sabotage?.cooldown ?? 99) > 0) return false;
+    return this.match.now() - this.sabotageSentAt >= SABOTAGE_SHOWS;
+  }
+
+  // Rooms one vent hop from the room the impostor stands in, nearest vent first: { room, vent, exit }.
+  // Only vents this copy can see; the mod lists where each one leads in `to`.
+  ventRoutes() {
+    const st = this.state;
+    const me = st?.me ?? {};
+    const here = roomFromBridge(me.room);
+    if (this.role !== 'impostor' || !this.alive || me.inVent || !here) return [];
+    const routes = new Map();
+    const vents = (st.vents ?? []).filter((v) => v.id !== undefined && roomFromBridge(v.room) === here);
+    for (const v of vents.sort((a, b) => (a.distance ?? 99) - (b.distance ?? 99))) {
+      for (const x of v.to ?? []) {
+        const room = roomFromBridge(x.room);
+        if (room && room !== here && !routes.has(room)) routes.set(room, { room, vent: v, exit: x.id });
+      }
+    }
+    return [...routes.values()];
+  }
+
   // ------------------------------------------------------------------ acting
 
   async execute(action) {
+    // Inside a vent the body cannot walk: let the hop finish and climb out first.
+    if (this.venting) await this.venting;
     const [verb, ...rest] = action.split(':');
     const arg = rest.join(':');
     const now = this.match.now();
@@ -367,9 +412,12 @@ export class BridgeSeat {
         return this.startReport();
       case 'kill':
         return this.startKill(arg);
+      case 'vent':
+        return this.startVent(arg);
       case 'sabotage':
         r = await send({ do: 'sabotage', type: arg });
         if (r.ok) {
+          this.sabotageSentAt = now;
           this.note(now, 'you_sabotaged', 'you_sabotaged', { kind: arg });
           this.match.ledger.sabotaged(this.id, arg);
           this.wake('idle');
@@ -422,8 +470,70 @@ export class BridgeSeat {
     return r;
   }
 
+  // A vent plan walks to the vent; `arrived` starts ventThrough().
+  async startVent(room) {
+    await this.refresh();
+    const route = this.ventRoutes().find((r) => r.room === room);
+    if (!route) return this.rejected(`vent:${room}`, 'no vent here leads there');
+    const r = await this.client.act({ do: 'move_to', pos: route.vent.pos });
+    if (!r.ok) return this.rejected(`vent:${room}`, r.error);
+    this.plan = { kind: 'vent', route, from: this.room, moving: true, until: this.match.now() + 20 };
+    return r;
+  }
+
+  // At the vent: in, one hop, out, each step checked in the copy's state. Once inside it finishes
+  // even if the brain has picked something new (execute() waits for it); a meeting ends it, and the
+  // game itself takes everyone out of the vents.
+  async ventThrough(plan) {
+    const { room } = plan.route;
+    const gone = () => this.match.meeting || this.match.over;
+    let error = await this.ventTry({ do: 'vent', enter: true }, (st) => st.me?.inVent === true);
+    if (error) return this.ventFailed(plan, error);
+    if (gone()) return;
+    // Two vents side by side: the copy enters the nearest, which may not be the one we walked to.
+    const exit = currentVent(this.state)?.to?.find((x) => roomFromBridge(x.room) === room);
+    if (!exit) return this.ventFailed(plan, `this vent does not lead to ${room}`);
+    error = await this.ventTry({ do: 'vent', to: exit.id }, (st) => currentVent(st)?.current === exit.id);
+    if (error) return this.ventFailed(plan, error);
+    if (gone()) return;
+    error = await this.ventTry({ do: 'vent', enter: false }, (st) => st.me?.inVent === false);
+    if (error) return this.ventFailed(plan, error);
+    if (gone()) return;
+    const t = this.match.now();
+    this.note(t, 'you_vented', 'you_vented', { from: plan.from, to: room });
+    this.match.emit({ type: 'vent', t, p: this.id, from: plan.from, to: room });
+    if (this.plan === plan) this.endPlan(plan);
+  }
+
+  async ventFailed(plan, reason) {
+    if (this.state?.me?.inVent && !this.match.meeting) await this.client.act({ do: 'vent', enter: false });
+    if (this.plan === plan) this.rejected(`vent:${plan.route.room}`, reason);
+  }
+
+  // One vent step, seen through in the copy's state. The game refuses the next step while the last
+  // one is still animating ("not allowed to move vents that fast" right after going in), so a refused
+  // step is sent again for a few seconds. Returns null, or the last error.
+  async ventTry(args, done) {
+    let error = null;
+    for (let i = 0; i < VENT_TRIES; i++) {
+      if (this.match.meeting || this.match.over) return null;
+      const r = await this.client.act(args);
+      if (await this.ventStep(done, r.ok ? 3000 : 400)) return null;
+      error = r.ok ? 'nothing changed in the game' : r.error;
+    }
+    return error;
+  }
+
+  ventStep(done, ms) {
+    return until(async () => {
+      const st = await this.refresh();
+      return st && done(st);
+    }, ms, 100);
+  }
+
   // Timers and the parts of a plan that need the copy's state.
   async tick() {
+    if (this.venting) return;
     const p = this.plan;
     const now = this.match.now();
     if (p?.until && now >= p.until) {
@@ -445,7 +555,9 @@ export class BridgeSeat {
       if ((st?.bodies?.[0]?.distance ?? 99) <= REPORT_REACH) await this.tryReport();
       return;
     }
-    if (this.role === 'impostor' && !this.deciding && !this.needs) await this.checkChance(now);
+    if (this.role !== 'impostor' || this.deciding || this.needs) return;
+    if (this.alive) await this.checkChance(now);
+    else if (!p && this.sabotageReady(await this.refresh() ?? {})) this.wake('sabotage_ready');
   }
 
   // The simulator's "opportunity": alone with one crewmate and the kill is ready.
@@ -461,6 +573,16 @@ export class BridgeSeat {
     this.note(now, 'opportunity', 'opportunity', { name, room: this.where(this.room) }, { interrupt: true });
   }
 }
+
+// A ghost impostor can only sabotage. With no sabotage ready there is nothing to choose, and the
+// runner asks no model.
+const GHOST_ACTIONS = [
+  { id: 'wait:15', label: 'wait 15s before sabotaging' },
+  ...SABOTAGE_TYPES.map((type) => ({ id: `sabotage:${type}`, label: `sabotage ${type}` })),
+];
+
+// The vent the player is inside, from a `state` reply's vents list: { current, to }.
+const currentVent = (st) => (st?.vents ?? []).find((v) => v.current !== undefined);
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
