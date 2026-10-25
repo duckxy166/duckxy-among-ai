@@ -60,13 +60,15 @@ const BRAINS = {
     }
     const tasks = all('task:');
     const carryOn = tasks[0] ?? rng.pick(all('move:'));
-    if (askedMe) return reply(carryOn, `${askedMe.who} ถามว่าไปไหนมา ตอบตามจริง`, '', `ทำ task อยู่ที่ ${view.room ?? 'ทางเดิน'}`);
+    const answer = askedMe ? `ทำ task อยู่ที่ ${view.room ?? 'ทางเดิน'}` : '';
+    // A sabotage comes before small talk: a question asked on the way is answered while going to fix it.
     if (has('fix') && view.sabotage) {
       if (claim && view.reason === 'heard') return reply(carryOn, `${claim.who} บอกว่าจะไปซ่อมไฟ งั้นทำ task ต่อ`, `${claim.who} บอกว่าจะไปซ่อมไฟ`, `โอเค ${claim.who} ฝากด้วย`);
       const call = view.reason !== 'sabotage' || !others.length ? ''
         : view.sabotage.kind === 'lights' ? `เราไปซ่อมไฟเอง ${others[0]} ทำ task ต่อเลย` : `${others[0]} ไป Reactor ด้วยกัน ต้องใช้สองคน`;
-      return reply('fix', `ต้องไปซ่อม ${view.sabotage.kind}`, '', call);
+      return reply('fix', `ต้องไปซ่อม ${view.sabotage.kind}`, '', answer || call);
     }
+    if (askedMe) return reply(carryOn, `${askedMe.who} ถามว่าไปไหนมา ตอบตามจริง`, '', answer);
     if (view.reason === 'saw_kill' || view.reason === 'saw_vent') {
       if (has('emergency')) return reply('emergency', 'เห็นกับตา ต้องเรียกประชุมเดี๋ยวนี้', 'เห็นหลักฐานชัด ๆ');
     }

@@ -29,11 +29,20 @@ export const DEFAULT_RULES = {
 const sameCorridor = (a, b) =>
   (a.from === b.from && a.to === b.to) || (a.from === b.to && a.to === b.from);
 
-// Does `text` name `name`? Latin letters around it make it part of another word ("covered" is not
-// "Red"); Thai written right after a name ("Redไปไหน") still counts.
-export function mentions(text, name) {
-  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, 'i').test(String(text ?? ''));
+// The names out of `names` that `text` calls. Latin letters around a name make it part of another
+// word ("covered" is not "Red"); Thai written right after it ("Redไปไหน") still counts. Longer names
+// are matched first and taken out, so "Claude Haiku" does not also call "Claude".
+export function namesIn(text, names) {
+  let rest = String(text ?? '');
+  const called = new Set();
+  for (const name of [...names].sort((a, b) => b.length - a.length)) {
+    const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    rest = rest.replace(new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, 'gi'), () => {
+      called.add(name);
+      return ' ';
+    });
+  }
+  return called;
 }
 
 export class Game {
@@ -592,14 +601,15 @@ export class Game {
     if (!p?.alive || this.phase !== 'roam' || !line) return;
     const ears = this.living().map((l) => ({ l, s: this.canSee(l, p) })).filter((x) => x.s);
     const blind = this.sabotage?.kind === 'lights' && p.role === 'crew';
-    const missed = blind ? [] : this.players.filter((o) => o !== p && !ears.some((x) => x.l === o) && mentions(line, o.name));
+    const called = namesIn(line, this.players.map((o) => o.name));
+    const missed = blind ? [] : this.players.filter((o) => o !== p && !ears.some((x) => x.l === o) && called.has(o.name));
     this.emit({
       type: 'say', p: p.id, text: line, room: this.where(p),
       heard: ears.map((x) => x.l.id), anon: ears.filter((x) => x.s === 'anon').map((x) => x.l.id), missed: missed.map((o) => o.id),
     });
 
     for (const { l, s } of ears) {
-      const named = mentions(line, l.name);
+      const named = called.has(l.name);
       const answer = this.t - (l.spokeTo.get(p.id) ?? -Infinity) <= this.rules.replySeconds;
       if (named) p.spokeTo.set(l.id, this.t);
       const data = { who: s === 'named' ? p.name : null, text: line, room: l.room ?? null, toMe: named || answer };

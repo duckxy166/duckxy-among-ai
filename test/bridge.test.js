@@ -275,6 +275,15 @@ test('a seat turns bridge events into memory lines and actions into act commands
   assert.equal(seat.plan, null);
   assert.equal(seat.needs, null);
 
+  // Asked again for the task it is doing (a wake-up mid-task), the body carries on: no second do_task,
+  // which would restart the walk and the wait in the game.
+  await seat.execute('fake:3');
+  const sent = calls.length;
+  seat.plan.stale = true;
+  await seat.execute('fake:3');
+  assert.equal(calls.length, sent);
+  assert.equal(seat.plan.stale, false);
+
   await seat.execute('kill:Blue');
   assert.deepEqual(calls.at(-1), { do: 'kill', target: 'Blue' });
   assert.equal(memory.entries.at(-1).kind, 'rejected');

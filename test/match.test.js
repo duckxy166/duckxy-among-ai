@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runMatch } from '../src/match/runner.js';
 import { createProvider } from '../src/providers/index.js';
+import { createMock } from '../src/providers/mock.js';
 
 const COLORS = ['red', 'blue', 'green', 'pink', 'orange', 'yellow', 'cyan', 'purple'];
 const SEATS = COLORS.map((c) => ({ id: c, name: c[0].toUpperCase() + c.slice(1), color: c, provider: 'mock', label: 'mock' }));
@@ -64,4 +65,18 @@ test('memories are separate: no prompt ever contains another player\'s secret th
   }
   // ...while each player does get its own past thoughts back.
   assert.ok([...prompts].some(([id, list]) => list.some((u) => u.includes(`[mock:${id}#`))));
+});
+
+test('a mock crewmate asked a question during a reactor meltdown answers on the way to fix it', async () => {
+  const seat = { id: 'blue', name: 'Blue' };
+  const mock = createMock(seat, 1);
+  const view = {
+    t: 10, role: 'crew', reason: 'heard', room: 'Admin', visible: [{ name: 'Red' }], bodies: [],
+    sabotage: { kind: 'reactor', secondsLeft: 30 }, legal: [{ id: 'fix' }, { id: 'task:wires' }, { id: 'move:Storage' }],
+  };
+  const evidence = [{ t: 10, kind: 'heard', who: 'Red', text: 'Blue ไปไหนมา', toMe: true }];
+  const res = await mock.complete({ context: { kind: 'roam', view, evidence, seat, role: 'crew', partners: [] } });
+  const out = JSON.parse(res.text);
+  assert.equal(out.action, 'fix');
+  assert.match(out.say, /ทำ task อยู่/);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game } from '../src/engine/game.js';
+import { Game, namesIn } from '../src/engine/game.js';
 import { ROOM_NAMES, shortestPath } from '../src/engine/map.js';
 import { createRng } from '../src/rng.js';
 
@@ -225,4 +225,12 @@ test('asked again to do the job it is doing, a player carries on instead of star
   assert.ok(left < 10);
   g.act('blue', 'task:scan');
   assert.equal(P(g, 'blue').busy.left, left);
+});
+
+test('a line calls the longest name it holds: "Claude Haiku" is not also "Claude"', () => {
+  const names = ['Claude', 'Claude Haiku', 'Red'];
+  assert.deepEqual([...namesIn('Claude Haiku, come here', names)], ['Claude Haiku']);
+  assert.deepEqual([...namesIn('claude and Claude Haiku', names)].sort(), ['Claude', 'Claude Haiku']);
+  assert.deepEqual([...namesIn('Redไปไหนมา', names)], ['Red']);
+  assert.equal(namesIn('who covered Reactor?', names).size, 0);
 });

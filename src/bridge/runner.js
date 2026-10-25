@@ -12,7 +12,7 @@ import { Agent, FatalSeatError } from '../agents/agent.js';
 import { systemPrompt } from '../agents/prompts.js';
 import { loadLongTerm, appendLongTerm } from '../agents/memory.js';
 import { BOARD, ROOMS, EDGES, VENT_GROUPS, COLORS } from '../engine/map.js';
-import { DEFAULT_RULES, mentions } from '../engine/game.js';
+import { DEFAULT_RULES, namesIn } from '../engine/game.js';
 import { say, clock } from '../i18n.js';
 import { BridgeSeat, sleep, until } from './seat.js';
 
@@ -157,10 +157,11 @@ export async function runBridgeMatch({
     if (!line || match.meeting || match.over || !s.alive) return;
     const t = now();
     const ears = list.filter((o) => o !== s && o.alive && o.seen.has(s.name));
-    const missed = list.filter((o) => o !== s && !ears.includes(o) && mentions(line, o.name));
+    const called = namesIn(line, list.map((o) => o.name));
+    const missed = list.filter((o) => o !== s && !ears.includes(o) && called.has(o.name));
     emit({ type: 'say', p: s.id, text: line, room: s.room, heard: ears.map((o) => o.id), anon: [], missed: missed.map((o) => o.id) });
     for (const o of ears) {
-      const named = mentions(line, o.name);
+      const named = called.has(o.name);
       const answer = t - (o.spokeTo.get(s.name) ?? -Infinity) <= rules.replySeconds;
       if (named) s.spokeTo.set(o.name, t);
       o.note(t, 'heard', 'heard', { name: s.name, text: line }, { data: { who: s.name, text: line, room: o.room, toMe: named || answer } });

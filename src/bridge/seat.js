@@ -372,6 +372,15 @@ export class BridgeSeat {
     const send = (args) => this.client.act(args);
     let r;
     let plan = null;
+    // The job the body is already doing (asked again after a wake-up, e.g. someone spoke): carry on.
+    // Sending it again would make the copy restart the walk and the wait for that task or panel.
+    const p = this.plan;
+    const same = p && ((p.kind === 'task' && (verb === 'task' || verb === 'fake') && p.task === arg)
+      || (p.kind === 'fix' && verb === 'fix' && p.type === this.state?.sabotage?.active));
+    if (same) {
+      p.stale = false;
+      return { ok: true };
+    }
     switch (verb) {
       case 'wait':
         r = await send({ do: 'stay' });
@@ -385,7 +394,7 @@ export class BridgeSeat {
       case 'task':
       case 'fake':
         r = await send({ do: 'do_task', id: Number(arg) });
-        plan = { kind: 'task', moving: true, until: now + 90 };
+        plan = { kind: 'task', task: arg, moving: true, until: now + 90 };
         break;
       case 'follow':
         r = await send({ do: 'follow', target: arg, distance: 1.5 });
@@ -397,7 +406,7 @@ export class BridgeSeat {
         break;
       case 'fix':
         r = await send({ do: 'fix', type: this.state?.sabotage?.active });
-        plan = { kind: 'fix', moving: true, until: now + 90 };
+        plan = { kind: 'fix', type: this.state?.sabotage?.active, moving: true, until: now + 90 };
         break;
       case 'report':
         return this.startReport();
