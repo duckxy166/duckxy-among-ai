@@ -6,9 +6,12 @@ import path from 'node:path';
 import { runBridgeMatch, fitChat } from '../src/bridge/runner.js';
 import { BridgeClient } from '../src/bridge/client.js';
 import { BridgeSeat } from '../src/bridge/seat.js';
+import { MatchLedger } from '../src/bridge/ledger.js';
 import { launchArgs } from '../src/bridge/launcher.js';
 import { roomFromBridge, roomToBridge, colorId } from '../src/bridge/skeld.js';
 import { EpisodicMemory } from '../src/agents/memory.js';
+import { Game } from '../src/engine/game.js';
+import { createRng } from '../src/rng.js';
 import { createProvider } from '../src/providers/index.js';
 import { startFakeShip } from './fake-bridge.js';
 
@@ -129,6 +132,36 @@ test('after a meeting that ejects nobody, play goes on until the impostor wins',
   }
 });
 
+test('crewmates fixing the reactor together hold different panels', async () => {
+  // Pink sabotages the reactor once; the crew fixes it, then finishes its tasks.
+  const brain = {
+    async complete({ context }) {
+      const { kind, view, role } = context;
+      const can = (id) => view?.legal.some((a) => a.id === id);
+      const task = view?.legal.find((a) => a.id.startsWith('task:'))?.id;
+      let action = 'wait:15';
+      if (role === 'impostor' && can('sabotage:reactor') && !brain.done) { action = 'sabotage:reactor'; brain.done = true; }
+      if (role !== 'impostor') action = can('fix') ? 'fix' : task ?? 'wait:15';
+      const out = kind === 'roam' ? { secret_thought: 'x', action, note: '' } : { secret_thought: 'x', chat_message: '', suspect: 'none', vote: 'skip', lesson: '' };
+      return { text: JSON.stringify(out), refused: false, model: 'script', usage: {} };
+    },
+  };
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, sabotageCooldown: 0 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, brain])));
+    const of = (type) => r.events.filter((e) => e.type === type);
+    const fixes = ship.ship.calls.filter((c) => c.do === 'fix');
+    assert.ok(fixes.length >= 2);
+    assert.deepEqual(fixes.slice(0, 2).map((c) => c.id).sort(), [0, 1]);
+    assert.deepEqual(of('sabotage').map((e) => [e.kind, e.by]), [['reactor', 'pink']]);
+    assert.deepEqual(of('sabotage_fixed').map((e) => e.kind), ['reactor']);
+    assert.deepEqual([r.winner, r.reason], ['crew', 'CrewmatesByTask']);
+    assert.ok(r.agents.get('red').memory.entries.some((e) => e.kind === 'sabotage' && /^Reactor meltdown!/.test(e.text)));
+  } finally {
+    await ship.close();
+  }
+});
+
 test('the mock brains play a whole game on the fake ship', async () => {
   const ship = await startFakeShip({ names: NAMES, impostor: 'Blue', token: TOKEN });
   try {
@@ -146,6 +179,17 @@ test('the mock brains play a whole game on the fake ship', async () => {
   }
 });
 
+// What a seat gets from its match, with a real ledger behind it.
+function seatMatch(names, emitted = []) {
+  const ledger = new MatchLedger({
+    seats: names.map((n) => ({ id: n.toLowerCase(), name: n })), emit: (e) => emitted.push(e), inView: () => new Set(),
+  });
+  return {
+    lang: 'en', rules: { followSeconds: 20, emergencyMeetings: 1 }, meeting: null, over: false,
+    now: () => 12, emit: (e) => emitted.push(e), warn: () => {}, ledger, onBridgeEvent() {},
+  };
+}
+
 test('a seat turns bridge events into memory lines and actions into act commands', async () => {
   const STATE = {
     phase: 'tasks', canMove: true,
@@ -162,11 +206,7 @@ test('a seat turns bridge events into memory lines and actions into act commands
     state: async () => ({ ok: true, stage: 'ingame', game: STATE }),
   };
   const emitted = [];
-  const match = {
-    lang: 'en', rules: { followSeconds: 20, emergencyMeetings: 1 }, meeting: null, over: false, knownDead: new Set(),
-    now: () => 12, emit: (e) => emitted.push(e), warn: () => {},
-    onBridgeEvent() {}, onKill() {}, onDeath() {}, onSabotage() {}, onSabotageFixed() {}, onTaskDone() {},
-  };
+  const match = seatMatch(['Red', 'Blue', 'Green'], emitted);
   const seat = new BridgeSeat({ seat: { id: 'red', name: 'Red' }, client, match });
   seat.role = 'impostor';
   const memory = new EpisodicMemory();
@@ -198,6 +238,15 @@ test('a seat turns bridge events into memory lines and actions into act commands
   assert.deepEqual(view.taskBar, { done: 25, total: 100 });
   assert.deepEqual(view.tasks.map((x) => [x.name, x.room, x.done]), [['Stabilize Steering', 'Navigation', false], ['Fix Wiring', 'Electrical', true]]);
 
+  // The view has the simulator's fields and nothing more; another copy's kill becomes known only
+  // when a meeting announces it.
+  const sim = new Game({ seats: ['red', 'blue', 'green', 'pink'].map((c) => ({ id: c, name: c, color: c })), rng: createRng(1) });
+  assert.deepEqual(Object.keys(view).sort(), Object.keys(sim.view('red')).sort());
+  match.ledger.killed('blue', 'Green', 'O2');
+  assert.deepEqual(seat.view('idle').knownDead, []);
+  match.ledger.announceDead();
+  assert.deepEqual(seat.view('idle').knownDead, ['Green']);
+
   await seat.execute('move:O2');
   assert.deepEqual(calls.at(-1), { do: 'move_to', room: 'LifeSupp' });
   seat.needs = null;
@@ -217,6 +266,39 @@ test('a seat turns bridge events into memory lines and actions into act commands
   assert.deepEqual(calls.at(-1), { do: 'kill', target: 'Blue' });
   assert.equal(memory.entries.at(-1).kind, 'rejected');
   assert.match(memory.entries.at(-1).text, /cooldown/);
+});
+
+test('a seat holds its reactor panel only while it is fixing', async () => {
+  const STATE = {
+    phase: 'tasks', canMove: true, me: { name: 'Red', alive: true, role: 'crewmate', room: 'Reactor' },
+    tasks: [], visible: [], bodies: [], sabotage: { active: 'reactor', timer: 30, cooldown: 0 },
+  };
+  const calls = [];
+  let refuse = false;
+  const client = {
+    act: async (a) => { calls.push(a); return refuse ? { ok: false, error: 'no path to the console' } : { ok: true }; },
+    state: async () => ({ ok: true, stage: 'ingame', game: STATE }),
+  };
+  const match = seatMatch(['Red', 'Blue', 'Green']);
+  const { ledger } = match;
+  const seat = new BridgeSeat({ seat: { id: 'red', name: 'Red' }, client, match });
+  seat.role = 'crew';
+  seat.attach({ memory: new EpisodicMemory() });
+  seat.state = STATE;
+
+  await seat.execute('fix');
+  assert.deepEqual(calls.at(-1), { do: 'fix', type: 'reactor', id: 0 });
+  assert.equal(ledger.reactorPanel('blue', 'reactor'), 1);
+  await seat.execute('fix'); // decides `fix` again: same panel
+  assert.equal(calls.at(-1).id, 0);
+  await seat.execute('move:Admin'); // walks off: panel 0 is free again
+  assert.equal(ledger.reactorPanel('blue', 'reactor'), 0);
+
+  // A fix order the copy refuses holds nothing either.
+  refuse = true;
+  await seat.execute('fix');
+  assert.equal(calls.at(-1).id, 1);
+  assert.equal(ledger.reactorPanel('green', 'reactor'), 1);
 });
 
 test('names, chat length and launch arguments', () => {

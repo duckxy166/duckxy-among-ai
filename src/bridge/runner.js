@@ -15,6 +15,7 @@ import { BOARD, ROOMS, EDGES, VENT_GROUPS, COLORS } from '../engine/map.js';
 import { DEFAULT_RULES } from '../engine/game.js';
 import { say, clock } from '../i18n.js';
 import { BridgeSeat, sleep, until } from './seat.js';
+import { MatchLedger } from './ledger.js';
 
 // Lobby options sent with `configure` (AUBridge names). Discussion and voting are long because the
 // models speak in turns through the real chat.
@@ -74,16 +75,15 @@ export async function runBridgeMatch({
   let reason = null;
   let meetingTask = null;
   let meetingCount = 0;
-  const bodyRooms = new Map();
+  // Facts pieced together from every copy; a seat's sightings stay in the seat and are only asked.
+  const ledger = new MatchLedger({ seats, emit, inView: (id) => list.find((s) => s.id === id).seen });
 
   const match = {
     lang: config.language,
     rules: { followSeconds: rules.followSeconds, emergencyMeetings: lobby.emergencyMeetings },
     meeting: null,
     over: false,
-    sabotage: null,
-    knownDead: new Set(),
-    now, emit, warn,
+    now, emit, warn, ledger,
     onBridgeEvent: (s, e) => {
       if (e.type === 'meeting_started' && !match.meeting && !match.over) {
         meetingTask = runMeeting(e).catch((err) => fail(err));
@@ -91,36 +91,19 @@ export async function runBridgeMatch({
         match.meeting?.resolveEnded(e);
       } else if (e.type === 'game_ended') {
         finish(e.winner === 'impostors' ? 'impostor' : e.winner === 'crew' ? 'crew' : 'none', e.reason);
+      } else if (e.type === 'you_died' && e.cause === 'killed') {
+        ghost(s);
+      } else if (e.type === 'task_done') {
+        s.refresh().then((st) => {
+          if (st?.taskBar !== undefined) emit({ type: 'taskbar', done: Math.round(st.taskBar * 100), total: 100 });
+        }).catch(() => {});
       }
     },
-    onKill: (s, victimName, room) => {
-      const victim = byName.get(victimName);
-      bodyRooms.set(victimName, room);
-      if (!victim) return;
-      victim.alive = false;
-      const witnesses = list.filter((o) => o.alive && o !== s && o.seen.has(s.name)).map((o) => o.id);
-      emit({ type: 'kill', killer: s.id, victim: victim.id, room, witnesses });
-    },
-    onDeath: (s) => {
-      // A dead crewmate keeps doing tasks (it still helps the crew win), driven by AUBridge's autopilot.
-      if (s.role === 'crew' && bridge.ghostTasks !== false) s.client.request('autopilot', { on: true }).catch(() => {});
-    },
-    // Only from the impostor's own `sabotage` act, which knows who did it. Every copy then reports the
-    // fix; the first one closes it.
-    onSabotage: (s, type) => {
-      match.sabotage = type;
-      emit({ type: 'sabotage', kind: type, by: s.id, deadline: null });
-    },
-    onSabotageFixed: (type) => {
-      if (match.sabotage !== type) return;
-      match.sabotage = null;
-      emit({ type: 'sabotage_fixed', kind: type, by: [] });
-    },
-    onTaskDone: (s) => {
-      s.refresh().then((st) => {
-        if (st?.taskBar !== undefined) emit({ type: 'taskbar', done: Math.round(st.taskBar * 100), total: 100 });
-      }).catch(() => {});
-    },
+  };
+
+  // A dead crewmate keeps doing tasks (it still helps the crew win), driven by AUBridge's autopilot.
+  const ghost = (s) => {
+    if (s.role === 'crew' && bridge.ghostTasks !== false) s.client.request('autopilot', { on: true }).catch(() => {});
   };
 
   const list = seats.map((seat) => new BridgeSeat({ seat, client: clients.get(seat.id), match }));
@@ -193,18 +176,18 @@ export async function runBridgeMatch({
     const alive = list.filter((s) => s.alive);
     const caller = byName.get(e.caller) ?? null;
     const body = e.body ? byName.get(e.body) ?? null : null;
-    const newlyDead = list.filter((s) => !s.alive && !match.knownDead.has(s.name));
-    newlyDead.forEach((s) => match.knownDead.add(s.name));
-    const room = body ? bodyRooms.get(body.name) ?? null : 'Cafeteria';
+    const newlyDead = ledger.announceDead();
+    const dead = ledger.knownDead();
+    const room = body ? ledger.bodyRoom(body.name) : 'Cafeteria';
     const info = {
       n: m.n, t: Math.round(m.t), reason: body ? 'body' : 'button', room: room ?? '?',
       callerName: e.caller ?? '?', bodyName: body?.name ?? null,
-      alive: alive.map((s) => s.name), dead: [...match.knownDead],
+      alive: alive.map((s) => s.name), dead,
     };
     log(`[${clock(m.t)}] meeting #${m.n} called by ${info.callerName}`);
     emit({
       type: 'meeting_start', n: m.n, caller: caller?.id ?? null, body: body?.id ?? null, room, reason: info.reason,
-      newlyDead: newlyDead.map((s) => s.id), dead: [...match.knownDead].map((n) => byName.get(n)?.id).filter(Boolean),
+      newlyDead, dead: dead.map((name) => byName.get(name).id),
     });
     for (const s of alive) {
       if (body) s.note(m.t, 'meeting', 'meeting_body', { caller: info.callerName, body: body.name, room: info.room });
@@ -264,10 +247,7 @@ export async function runBridgeMatch({
     const ended = m.ended ?? { ejected: null, tie: false };
     if (!m.ended) warn(`meeting #${m.n}: no meeting_ended from the game`);
     const out = ended.ejected ? byName.get(ended.ejected) ?? null : null;
-    if (out) {
-      out.alive = false;
-      match.knownDead.add(out.name);
-    }
+    if (out) ledger.ejected(out.id);
     const why = out ? null : ended.tie ? 'tie' : 'skip';
     const wasImpostor = out ? out.role === 'impostor' : null;
     emit({ type: 'vote_result', ejected: out?.id ?? null, tally, skip, why, wasImpostor, reveal: lobby.confirmEjects });
@@ -307,7 +287,7 @@ export async function runBridgeMatch({
     if (match.over) return;
     for (const s of list) {
       if (s.alive) s.wake('meeting_over');
-      else if (s.role === 'crew') match.onDeath(s);
+      else ghost(s);
     }
   }
 

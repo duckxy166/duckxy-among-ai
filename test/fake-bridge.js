@@ -4,14 +4,19 @@
 
 import net from 'node:net';
 
-const ROOMS = ['Cafeteria', 'Admin', 'Electrical', 'MedBay', 'Nav'];
+const ROOMS = ['Cafeteria', 'Admin', 'Electrical', 'MedBay', 'Nav', 'Reactor'];
 const TASKS = [
   { name: 'FixWiring', room: 'Electrical' }, { name: 'SwipeCard', room: 'Admin' },
   { name: 'SubmitScan', room: 'MedBay' }, { name: 'StabilizeSteering', room: 'Nav' },
 ];
+// Orders that move the body; like the mod's Body.Stop(), each one lets go of a held reactor panel.
+const BODY_ORDERS = new Set(['stay', 'move_to', 'do_task', 'follow', 'call_meeting', 'fix']);
 
-export async function startFakeShip({ names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300 }) {
-  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, t0: Date.now(), calls: [], sockets: new Set() };
+// sabotageCooldown 0 lets the impostor sabotage at once; a reactor sabotage is lost after reactorMs.
+export async function startFakeShip({
+  names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300, sabotageCooldown = 99, reactorMs = 3000,
+}) {
+  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, sab: null, t0: Date.now(), calls: [], sockets: new Set() };
   const now = () => (Date.now() - ship.t0) / 1000;
   const players = names.map((name, i) => ({
     name, i, role: 'crewmate', alive: true, room: 'Cafeteria', tasks: [], seenBodies: new Set(), events: [], seq: 0, waiters: [],
@@ -55,6 +60,20 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     else if (players.filter((p) => !isImp(p)).every((p) => p.tasks.every((t) => t.done))) end('crew', 'CrewmatesByTask');
   }
 
+  function fixed() {
+    clearTimeout(ship.sab.timer);
+    const kind = ship.sab.kind;
+    ship.sab = null;
+    all('sabotage_fixed', { type: kind });
+  }
+
+  // The reactor is fixed only while both panels (0 and 1) are held.
+  function hold(p, id) {
+    if (!ship.sab || ship.sab.kind !== 'reactor') return;
+    ship.sab.held.set(p.name, id);
+    if (new Set(ship.sab.held.values()).size === 2) fixed();
+  }
+
   function startMeeting(caller, body) {
     ship.phase = 'meeting';
     ship.meeting = { caller: caller.name, body, votes: new Map() };
@@ -92,6 +111,7 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     const ok = () => ({ ok: true, accepted: a.do });
     const err = (error) => ({ ok: false, error });
     ship.calls.push({ who: p.name, ...a });
+    if (BODY_ORDERS.has(a.do)) ship.sab?.held.delete(p.name);
     switch (a.do) {
       case 'stay':
         return ok();
@@ -142,6 +162,21 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
       case 'call_meeting':
         later(() => startMeeting(p, null));
         return ok();
+      case 'sabotage':
+        if (!isImp(p)) return err('only an impostor can sabotage');
+        if (ship.sab) return err('a sabotage is already active');
+        ship.sab = { kind: a.type, held: new Map() };
+        if (a.type === 'reactor') ship.sab.timer = setTimeout(() => end('impostors', 'ImpostorsBySabotage'), reactorMs);
+        all('sabotage', { type: a.type });
+        return ok();
+      case 'fix':
+        if (isImp(p)) return err('impostors cannot repair sabotage');
+        if (!ship.sab || ship.sab.kind !== a.type) return err(`no active ${a.type} sabotage`);
+        if (a.type !== 'reactor') { later(fixed); return ok(); }
+        if (a.id !== undefined && a.id !== 0 && a.id !== 1) return err('no console with that id');
+        // Like the mod, no id means the nearest panel: here always panel 1.
+        later(() => { moveTo(p, 'Reactor'); later(() => hold(p, a.id ?? 1)); });
+        return ok();
       case 'chat':
         if (!ship.meeting && ship.phase !== 'voting') return err('chat is only available in meetings');
         if (String(a.text ?? '').length > 100) return err('chat text too long (max 100)');
@@ -174,7 +209,7 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
         taskBar: crewTasks.length ? crewTasks.filter((t) => t.done).length / crewTasks.length : 0,
         visible: p.alive ? near(p).map((o) => ({ name: o.name, color: o.i, pos: [1, 0], room: o.room, alive: true, distance: 1, inVent: false })) : [],
         bodies: ship.bodies.filter((b) => b.room === p.room).map((b) => ({ name: b.name, color: 0, pos: [0, 1], room: b.room, distance: 0.5 })),
-        sabotage: { active: null, timer: 0, cooldown: 99 },
+        sabotage: { active: ship.sab?.kind ?? null, timer: ship.sab ? 30 : 0, cooldown: sabotageCooldown },
         meeting: ship.meeting ? { caller: ship.meeting.caller, reportedBody: ship.meeting.body } : null,
         busy: 'idle',
       },
@@ -250,6 +285,7 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     players,
     ports: players.map((p) => p.port),
     async close() {
+      clearTimeout(ship.sab?.timer);
       for (const p of players) { const w = p.waiters; p.waiters = []; w.forEach((f) => f()); }
       for (const s of ship.sockets) s.destroy();
       await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));

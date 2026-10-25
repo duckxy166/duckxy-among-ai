@@ -10,7 +10,7 @@ const TICK_MS = 500;
 const REPORT_REACH = 1.0; // closer than this, report from where we stand; else walk to the body first
 
 export class BridgeSeat {
-  // match: { lang, rules, now(), emit(event), meeting, over, onBridgeEvent(seat, e), onKill(seat, victim, room), onSabotage(seat, type), warn(text) }
+  // match: { lang, rules, now(), emit(event), warn(text), meeting, over, ledger (MatchLedger), onBridgeEvent(seat, e) }
   constructor({ seat, client, match }) {
     this.seat = seat;
     this.id = seat.id;
@@ -20,14 +20,13 @@ export class BridgeSeat {
     this.agent = null;
     this.role = null; // 'crew' | 'impostor', as in the simulator
     this.partners = [];
-    this.alive = true;
     this.state = null; // the `game` part of the last `state` reply
     this.room = 'Cafeteria';
     this.seen = new Set(); // names in view, from saw_player / lost_player
     this.seq = 0;
     this.needs = null;
     this.waiter = null;
-    this.plan = null;
+    this._plan = null;
     this.deciding = false;
     this.stopped = false;
     this.buffered = [];
@@ -36,6 +35,17 @@ export class BridgeSeat {
   }
 
   // ------------------------------------------------------------------ plumbing
+
+  // The ledger's: the killer's copy or the vote can report this seat dead before its own copy does.
+  get alive() { return this.match.ledger.alive(this.id); }
+
+  // A fix plan holds a reactor panel in the ledger. Any other plan lets go of it, as every new body
+  // order does in the mod (Body.Stop releases the console).
+  get plan() { return this._plan; }
+  set plan(p) {
+    if (this._plan?.kind === 'fix' && p?.kind !== 'fix') this.match.ledger.releasePanel(this.id);
+    this._plan = p;
+  }
 
   attach(agent) {
     this.agent = agent;
@@ -49,7 +59,7 @@ export class BridgeSeat {
     this.state = r.game ?? null;
     const me = this.state?.me;
     if (me) {
-      this.alive = me.alive !== false;
+      if (me.alive === false) this.match.ledger.died(this.id);
       this.room = roomFromBridge(me.room) ?? this.room;
     }
     return this.state;
@@ -183,7 +193,6 @@ export class BridgeSeat {
         const done = tasks.filter((x) => x.done || x.id === e.id).length;
         this.note(t, 'task_done', 'task_done', { task: taskName(e.name), room: this.where(roomFromBridge(task?.room) ?? this.room), done, total: tasks.length });
         this.match.emit({ type: 'task_done', t: this.match.now(), p: this.id, task: taskName(e.name), room: this.room, ghost: !this.alive });
-        this.match.onTaskDone(this);
         if (plan?.kind === 'task') this.endPlan(plan);
         break;
       }
@@ -204,17 +213,16 @@ export class BridgeSeat {
         this.note(t, 'you_killed', 'you_killed', {
           victim: e.victim, room: this.where(room), witnesses: witnesses.join(', ') || say(this.match.lang, 'nobody'),
         });
-        this.match.onKill(this, e.victim, room ?? this.room);
+        this.match.ledger.killed(this.id, e.victim, room ?? this.room);
         this.endPlan(plan);
         break;
       }
       case 'you_died':
         if (e.cause !== 'killed') break; // ejections are written by the meeting
         this.note(t, 'you_died', e.killer ? 'you_died' : 'you_died_unseen', { killer: e.killer, room: this.where(this.room) });
-        this.alive = false;
+        this.match.ledger.died(this.id);
         this.plan = null;
         this.needs = null;
-        this.match.onDeath(this);
         break;
       case 'sabotage': {
         const secs = Math.round(this.state?.sabotage?.timer ?? 30);
@@ -224,7 +232,7 @@ export class BridgeSeat {
       }
       case 'sabotage_fixed':
         this.note(t, 'sabotage', `fixed_${e.kind}`);
-        this.match.onSabotageFixed(e.kind);
+        this.match.ledger.fixed(e.kind);
         if (plan?.kind === 'fix') this.endPlan(plan);
         break;
       case 'fix_finished':
@@ -272,7 +280,7 @@ export class BridgeSeat {
       killCooldown: Math.ceil(me.killCooldown ?? 0),
       sabotageCooldown: Math.ceil(st.sabotage?.cooldown ?? 0),
       vents: [],
-      knownDead: [...this.match.knownDead],
+      knownDead: this.match.ledger.knownDead(),
       emergencies: this.emergencies,
       legal: this.legalActions(),
     };
@@ -348,10 +356,13 @@ export class BridgeSeat {
         r = await send({ do: 'call_meeting' });
         plan = { kind: 'button', moving: true, until: now + 60 };
         break;
-      case 'fix':
-        r = await send({ do: 'fix', type: this.state?.sabotage?.active });
+      case 'fix': {
+        const type = this.state?.sabotage?.active;
+        r = await send({ do: 'fix', type, id: this.match.ledger.reactorPanel(this.id, type) });
+        if (!r.ok) this.match.ledger.releasePanel(this.id); // no fix plan ever held it
         plan = { kind: 'fix', moving: true, until: now + 90 };
         break;
+      }
       case 'report':
         return this.startReport();
       case 'kill':
@@ -360,7 +371,7 @@ export class BridgeSeat {
         r = await send({ do: 'sabotage', type: arg });
         if (r.ok) {
           this.note(now, 'you_sabotaged', 'you_sabotaged', { kind: arg });
-          this.match.onSabotage(this, arg);
+          this.match.ledger.sabotaged(this.id, arg);
           this.wake('idle');
         }
         break;
