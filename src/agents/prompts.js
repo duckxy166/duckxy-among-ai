@@ -56,7 +56,7 @@ export function systemPrompt({ me, role, partners, roster, rules, impostorCount,
     .map((s) => `- ${s.name} (${s.color}${revealModels && s.label ? `, played by ${s.label}` : ''})${s.id === me.id ? '  <- you' : ''}`)
     .join('\n');
   const roleText = role === 'impostor'
-    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you two know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, use vents, sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill or a vent can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
+    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you ${partners.length === 1 ? 'two' : 'impostors'} know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, use vents, sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill or a vent can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
     : `CREWMATE. You win when every task is done or every Impostor is voted out. ${impostorCount} Impostor${impostorCount > 1 ? 's are' : ' is'} hiding among the players. Do your tasks, watch who goes where, and catch the liars.`;
 
   return `You are ${me.name}, a player in AMONG AI: an Among Us-style social deduction match where every player is a different AI model. Play to win and stay in character for the whole match.
@@ -122,7 +122,7 @@ export function roamPrompt(view, memory) {
     out.push(`Your tasks: ${view.tasks.map((t) => `${t.done ? '[done]' : '[todo]'} ${t.name} @ ${t.room}`).join('; ')}.`);
     out.push(`Crew task bar: ${view.taskBar.done}/${view.taskBar.total}.`);
   } else {
-    if (view.partners.length) out.push(`Your partner: ${view.partners.join(', ')}.`);
+    if (view.partners.length) out.push(`Your partner${view.partners.length > 1 ? 's' : ''}: ${view.partners.join(', ')}.`);
     out.push(`Kill cooldown: ${view.killCooldown > 0 ? `${view.killCooldown}s` : 'READY'}. Sabotage: ${view.sabotageCooldown > 0 ? `${view.sabotageCooldown}s` : 'ready'}.${view.vents.length ? ` Vents here lead to: ${view.vents.join(', ')}.` : ''}`);
     out.push(`Cover tasks you can pretend to do: ${view.tasks.filter((t) => !t.done).map((t) => `${t.name} @ ${t.room}`).join('; ') || 'none left'}.`);
     out.push(`Crew task bar: ${view.taskBar.done}/${view.taskBar.total}.`);

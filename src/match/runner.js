@@ -13,6 +13,9 @@ import { createRng } from '../rng.js';
 import { clock } from '../i18n.js';
 
 const quote = (s, n = 160) => (s ? `"${s.length > n ? `${s.slice(0, n - 1)}…` : s}"` : '(quiet)');
+// Decision rounds at one game second. Players woken by an action in a round (a kill or vent they
+// watched) decide again before the clock moves; the cap stops two players waking each other forever.
+const ROUNDS_PER_SECOND = 3;
 
 export async function runMatch({ config, seats, providers, matchId, dir, memoryDir, publish = () => {}, log = () => {} }) {
   const rng = createRng(config.seed);
@@ -128,24 +131,38 @@ export async function runMatch({ config, seats, providers, matchId, dir, memoryD
   try {
     game.start();
     flush();
+    let rounds = 0;
     while (game.phase !== 'over') {
-      if (game.phase === 'meeting') { await runMeeting(); continue; }
-      const pending = game.pendingDecisions();
-      if (pending.length) {
+      if (game.phase === 'meeting') { await runMeeting(); rounds = 0; continue; }
+      let pending = game.pendingDecisions();
+      if (pending.length && rounds > 0 && rounds < ROUNDS_PER_SECOND) {
+        game.refreshSight(); // the last round may have changed who is alive or what the lights let anyone see
+        flush();
+        pending = game.pendingDecisions();
+      }
+      if (pending.length && rounds < ROUNDS_PER_SECOND) {
+        rounds++;
         const views = pending.map((p) => game.view(p.id));
         emit({ type: 'thinking', t: game.t, players: pending.map((p) => p.id) });
         const results = await Promise.all(pending.map((p, i) => agents.get(p.id).decideRoam(views[i])));
+        // This round answers every need in `pending`. A need that is back before a player's turn below
+        // was raised by an earlier action in the round: that player's plan was made before it, so it
+        // is dropped and they decide again in the next round.
+        for (const p of pending) p.needs = null;
         pending.forEach((p, i) => {
           const r = results[i];
-          emit({ type: 'decision', t: game.t, p: p.id, reason: views[i].reason, thought: r.thought, action: r.action, raw: r.raw, say: r.say, note: r.note, error: r.error, ms: r.ms, model: r.model });
-          if (game.phase === 'roam' && p.alive) {
+          const stale = !!p.needs;
+          emit({ type: 'decision', t: game.t, p: p.id, reason: views[i].reason, thought: r.thought, action: r.action, raw: r.raw, say: r.say, note: r.note, error: r.error, ms: r.ms, model: r.model, ...(stale ? { stale } : {}) });
+          // A stale plan is neither said nor done.
+          if (game.phase === 'roam' && p.alive && !stale) {
             game.speak(p.id, r.say); // said where they stand, before the order moves them
             game.act(p.id, r.action);
           }
           flush();
         });
-        if (game.phase !== 'roam') continue;
+        continue;
       }
+      rounds = 0;
       game.step();
       flush();
     }

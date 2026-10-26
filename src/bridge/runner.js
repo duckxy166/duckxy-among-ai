@@ -35,6 +35,15 @@ export function fitChat(text) {
   return `${space > CHAT_MAX * 0.6 ? cut.slice(0, space) : cut}…`;
 }
 
+// The reactor panel (console 0 or 1) to send seat `s` to: the one fewer other living seats are fixing
+// at or have a fix order on its way to. The panel is part of a seat's fix plan, so one that gives up
+// or gets stuck frees it; a seat fixing again does not count against itself and stays put on a tie.
+export function freePanel(s, seats) {
+  const at = (k) => seats.filter((o) => o !== s && o.alive && (o.fixing === k || (o.plan?.kind === 'fix' && o.plan.panel === k))).length;
+  const mine = s.plan?.kind === 'fix' && s.plan.panel === 1 ? 1 : 0;
+  return at(1 - mine) < at(mine) ? 1 - mine : mine;
+}
+
 // clients: Map seatId -> BridgeClient. The first seat's copy is the lobby host, and every copy must
 // already be in that lobby (see launcher.js).
 export async function runBridgeMatch({
@@ -111,6 +120,10 @@ export async function runBridgeMatch({
       match.sabotage = type;
       emit({ type: 'sabotage', kind: type, by: s.id, deadline: null });
     },
+    // The reactor needs both panels held at once. `fix` without a console id walks to the nearest
+    // panel, so crewmates who start together from the same side all hold the same one; spread them
+    // with freePanel. Other sabotages take the mod's own choice.
+    fixConsole: (s, type) => (type === 'reactor' ? freePanel(s, list) : undefined),
     onSabotageFixed: (type) => {
       if (match.sabotage !== type) return;
       match.sabotage = null;
@@ -270,24 +283,35 @@ export async function runBridgeMatch({
     const ballots = await Promise.all(alive.map(async (s) => {
       const v = await agents.get(s.id).vote(info, transcript, options);
       let res = null;
+      let cast = false;
       while (!m.ended && !match.over && Date.now() < voteBy) {
         const st = await s.refresh().catch(() => null);
         if (st?.phase === 'voting') {
           res = await s.client.act({ do: 'vote', target: v.vote });
-          if (res.ok || !/not open/i.test(res.error ?? '')) break;
+          if (res.ok || /already voted/i.test(res.error ?? '')) { cast = true; break; }
+          // "game thread busy": the copy still casts the vote once its game thread is free, so ask again.
+          if (!/not open|busy/i.test(res.error ?? '')) break;
         } else if (st && st.phase !== 'meeting') {
-          break; // the copy already shows the result
+          // The copy already shows the result, which marks who voted (a "busy" vote may have gone in).
+          cast = !!st.meeting?.voted?.includes(s.name);
+          break;
         }
         await sleep(500);
       }
-      return { s, v, res };
+      return { s, v, res, cast };
     }));
+    // Only the votes a copy took count, as in the game: a refused or late vote is no vote. (A copy
+    // that is not the host only sends its vote, so the host can still miss one cast at the last moment.)
     const tally = {};
     let skip = 0;
-    for (const { s, v, res } of ballots) {
+    for (const { s, v, res, cast } of ballots) {
       const target = v.vote === 'skip' ? 'skip' : byName.get(v.vote)?.id ?? 'skip';
-      if (target === 'skip') skip++; else tally[target] = (tally[target] || 0) + 1;
-      emit({ type: 'vote', p: s.id, target, thought: v.thought, error: v.error ?? (res && !res.ok ? `vote: ${res.error}` : undefined), ms: v.ms, model: v.model });
+      if (cast && target === 'skip') skip++;
+      else if (cast) tally[target] = (tally[target] || 0) + 1;
+      emit({
+        type: 'vote', p: s.id, target, ...(cast ? {} : { cast }), thought: v.thought,
+        error: v.error ?? (cast ? undefined : `vote: ${res?.error ?? 'voting closed before the vote was cast'}`), ms: v.ms, model: v.model,
+      });
     }
 
     const giveUp = new Promise((resolve) => setTimeout(resolve, (lobby.voting + 30) * 1000).unref());
@@ -312,8 +336,14 @@ export async function runBridgeMatch({
       }
     }
 
-    // The public record every player remembers, as in the simulator.
-    const votedFor = new Map(ballots.map(({ s, v }) => [s.name, v.vote]));
+    // The public record every player remembers, as in the simulator. Like the results screen, it has
+    // only the votes the game took, and with anonymous votes only how many each one got.
+    const castBy = new Map(ballots.filter(({ cast }) => cast).map(({ s, v }) => [s.name, v.vote]));
+    const counts = {};
+    for (const x of castBy.values()) counts[x] = (counts[x] || 0) + 1;
+    const votes = lobby.anonymousVotes
+      ? `  Votes (anonymous): ${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([x, n]) => `${x} ×${n}`).join(', ') || 'none'}`
+      : `  Votes: ${alive.map((s) => `${s.name}→${castBy.get(s.name) ?? '(no vote)'}`).join(', ')}`;
     const outcome = out
       ? `${out.name} was ejected${lobby.confirmEjects ? (wasImpostor ? ' (an Impostor)' : ' (NOT an Impostor)') : ''}`
       : `nobody was ejected (${why})`;
@@ -321,7 +351,7 @@ export async function runBridgeMatch({
     const text = [
       `Meeting #${m.n} [${clock(info.t)}]: ${whyText}. Dead by then: ${info.dead.join(', ') || 'nobody'}.`,
       ...transcript.map((c) => `  ${c.name}: ${quote(c.text)}`),
-      `  Votes: ${alive.map((s) => `${s.name}→${votedFor.get(s.name)}`).join(', ')}`,
+      votes,
       `  Result: ${outcome}.`,
     ].join('\n');
     for (const a of agents.values()) a.memory.addMeeting(text);
@@ -373,7 +403,8 @@ export async function runBridgeMatch({
       const me = s.state.me;
       if (me.name !== s.name) throw new Error(`copy ${s.client.id} plays as "${me.name}", expected "${s.name}"`);
       s.role = me.role === 'impostor' ? 'impostor' : 'crew';
-      s.partners = me.partner ? [me.partner] : [];
+      // `partners` lists every other impostor; a mod older than that sends only the first as `partner`.
+      s.partners = me.partners ?? (me.partner ? [me.partner] : []);
     }
 
     const roster = seats.map((s) => ({ id: s.id, name: s.name, color: s.color, label: s.label }));

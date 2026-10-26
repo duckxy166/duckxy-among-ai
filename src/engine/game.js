@@ -298,6 +298,12 @@ export class Game {
     this.checkWin();
   }
 
+  // Between two decision rounds in the same second: what everyone sees now that a kill, a vent or the
+  // lights may have changed it, without the comings and goings step() writes down (new bodies still count).
+  refreshSight() {
+    for (const p of this.living()) this.look(p, 'silent');
+  }
+
   // Compare what `v` sees now with last second and write the differences to their memory.
   look(v, mode) {
     const now = new Map();

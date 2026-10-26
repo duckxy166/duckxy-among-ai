@@ -153,18 +153,29 @@ public static class Game
     }
     internal static bool AmImpostor(PlayerControl me) => me.Data.Role != null && me.Data.Role.IsImpostor;
 
-    // Partner is only ever looked up when the local player is an impostor (the game shows teammates to impostors anyway).
-    internal static string Partner(PlayerControl me)
+    // Partners are only ever looked up when the local player is an impostor (the game shows teammates to impostors anyway).
+    // Every other impostor: one in a 2-impostor game, two in a 3-impostor game.
+    internal static List<string> Partners(PlayerControl me)
     {
-        if (!AmImpostor(me)) return null;
+        var res = new List<string>();
+        if (!AmImpostor(me)) return res;
         var all = PlayerControl.AllPlayerControls;
         for (int i = 0; i < all.Count; i++)
         {
             var p = all[i];
             if (p == null || p.Data == null || p.PlayerId == me.PlayerId || p.Data.Disconnected) continue;
-            if (p.Data.Role != null && p.Data.Role.IsImpostor) return p.Data.PlayerName;
+            if (p.Data.Role != null && p.Data.Role.IsImpostor) res.Add(p.Data.PlayerName);
         }
-        return null;
+        return res;
+    }
+
+    // The first partner, kept as `partner` for readers that know only one.
+    internal static string Partner(PlayerControl me) { var ps = Partners(me); return ps.Count > 0 ? ps[0] : null; }
+
+    internal static bool IsPartner(PlayerControl me, string name)
+    {
+        foreach (var n in Partners(me)) if (string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     internal static bool IsSabTask(TaskTypes t) =>
@@ -251,6 +262,9 @@ public static class Game
         try { return GameManager.Instance.LogicOptions.currentGameOptions.GetInt(n); } catch { return 0; }
     }
 
+    // Voted or skipped. When time runs out the game marks everyone left as voted too, with MissedVote.
+    static bool Voted(PlayerVoteArea s) => s.DidVote && s.VotedForId != PlayerVoteArea.MissedVote;
+
     static Dictionary<string, object> MeetingState()
     {
         var m = MeetingHud.Instance;
@@ -266,7 +280,7 @@ public static class Game
                 var nm = NameOf(s.PlayerId);
                 if (nm == null) continue;
                 bool dead = s.AmDead;
-                if (!dead && s.DidVote) voted.Add(nm);
+                if (!dead && Voted(s)) voted.Add(nm);
                 players.Add(new Dictionary<string, object> { ["name"] = nm, ["alive"] = !dead });
             }
         double left = 0;
@@ -327,7 +341,7 @@ public static class Game
                 ["name"] = d.PlayerName, ["color"] = d.DefaultOutfit != null ? d.DefaultOutfit.ColorId : -1, ["alive"] = !d.IsDead,
                 ["role"] = RoleName(d), ["pos"] = P(a), ["room"] = RoomAt(a),
                 ["killCooldown"] = imp ? R(Math.Max(0, me.killTimer)) : 0.0, ["killRange"] = imp ? R(Body.KillRange()) : 0.0,
-                ["canVent"] = d.Role != null && d.Role.CanVent, ["inVent"] = me.inVent, ["partner"] = Partner(me),
+                ["canVent"] = d.Role != null && d.Role.CanVent, ["inVent"] = me.inVent, ["partner"] = Partner(me), ["partners"] = Partners(me),
             },
             ["tasks"] = Tasks(me), ["taskBar"] = taskBar, ["visible"] = vis, ["bodies"] = bodies,
             ["sabotage"] = new Dictionary<string, object> { ["active"] = sab.type, ["timer"] = sab.timer, ["cooldown"] = imp ? SabotageCooldown() : 0.0 },
@@ -454,7 +468,7 @@ public static class Game
         var tasks = Tasks(me);
         foreach (var t in tasks) _taskDone[(uint)t["id"]] = false;
         Body.OnMatchStart();
-        Events.Add("game_started", "gameId", _gameId, "role", RoleName(me.Data), "partner", Partner(me), "tasks", tasks);
+        Events.Add("game_started", "gameId", _gameId, "role", RoleName(me.Data), "partner", Partner(me), "partners", Partners(me), "tasks", tasks);
     }
 
     static void LogTick(PlayerControl me, Vector2 a, float radius)
@@ -503,7 +517,7 @@ public static class Game
                 for (int i = 0; i < m.playerStates.Length; i++)
                 {
                     var s = m.playerStates[i];
-                    if (s == null || s.AmDead || !s.DidVote) continue;
+                    if (s == null || s.AmDead || !Voted(s)) continue;
                     if (_voted.Add(s.PlayerId)) Events.Add("vote_cast", "from", NameOf(s.PlayerId));
                 }
             return;
@@ -565,7 +579,7 @@ public static class Game
             foreach (var s in states)
             {
                 var from = NameOf(s.VoterId);
-                if (from == null) continue;
+                if (from == null || s.VotedForId == PlayerVoteArea.MissedVote) continue; // time ran out: no vote
                 var to = s.VotedForId == PlayerVoteArea.SkippedVote ? "skip" : (NameOf(s.VotedForId) ?? "skip");
                 res[from] = to;
                 counts[to] = counts.TryGetValue(to, out var k) ? k + 1 : 1;
