@@ -685,6 +685,11 @@ test('names, chat length and launch arguments', () => {
   assert.ok(splitChat(word).every((p) => p.length <= 100 && !/^[ัิ-ฺ็-๎]/.test(p)));
   const args = launchArgs({ id: 2, mode: 'join', name: 'Kimi', color: 'purple', token: TOKEN, port: 47002 });
   assert.ok(args.includes('--aub-mode=join') && args.includes('--aub-color=8') && args.includes('--aub-port=47002'));
+  assert.ok(!args.some((a) => a.startsWith('--aub-window') || a.startsWith('--aub-sound') || a === '-popupwindow'));
+  const rec = launchArgs({ id: 1, mode: 'host', name: 'Kimi', color: 'purple', token: TOKEN, port: 47001, sound: true, window: '1920x1080' });
+  assert.ok(rec.includes('--aub-sound=1') && rec.includes('--aub-window=1920x1080') && rec.includes('-popupwindow'));
+  assert.deepEqual(rec.slice(rec.indexOf('-screen-width'), rec.indexOf('-screen-width') + 6), ['-screen-width', '1920', '-screen-height', '1080', '-screen-fullscreen', '0']);
+  assert.ok(!launchArgs({ id: 1, mode: 'host', name: 'K', color: 'red', token: TOKEN, port: 1, window: 'big' }).includes('-popupwindow'));
   const b64 = args.find((a) => a.startsWith('--aub-nameb64=')).split('=')[1];
   assert.equal(Buffer.from(b64, 'base64').toString('utf8'), 'Kimi');
   assert.throws(() => new BridgeClient({ id: 1, token: 'short' }), /16 or more/);

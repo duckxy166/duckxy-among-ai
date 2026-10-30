@@ -67,7 +67,7 @@ public class Runner : MonoBehaviour
             try { a(); } catch (Exception e) { Plugin.Logger.LogError("[AUB] queued: " + e.Message); }
         }
         // Bot copies stay silent. The game sets its own mixer volumes, but never the global listener volume.
-        if (Plugin.Cfg.Mute && AudioListener.volume != 0f) AudioListener.volume = 0f;
+        if (Plugin.Cfg.Mute && !Plugin.Cfg.Sound && AudioListener.volume != 0f) AudioListener.volume = 0f;
         float now = Time.realtimeSinceStartup;
         Game.Update(now);
         try { Body.Update(now); } catch (Exception e) { Plugin.Logger.LogError("[AUB] body: " + e.Message); }
@@ -84,6 +84,7 @@ public class Runner : MonoBehaviour
     {
         ApplyIdentity(now);
         ThaiFont.Tick(now);
+        Window.Tick(now);
         CloseAnnouncements(now);
         HandleMergePopup(now);
         PlayAgain(now);

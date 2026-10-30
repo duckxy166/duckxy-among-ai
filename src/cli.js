@@ -133,7 +133,7 @@ async function real() {
   } else {
     lobby = await openLobby({
       gamePath: bridge.gamePath || process.env.AMONG_US_EXE, seats: m.seats, token: newToken(), basePort,
-      joinDelayMs: bridge.joinDelayMs, log: m.log,
+      joinDelayMs: bridge.joinDelayMs, sound: bridge.sound, window: bridge.window, log: m.log,
     });
   }
   try {
