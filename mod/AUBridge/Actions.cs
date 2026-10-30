@@ -62,7 +62,7 @@ public static partial class Body
         foreach (var v in Game.Visible(me, pos, Game.LightRadius(me))) if (string.Equals(v.Name, a.Target, StringComparison.OrdinalIgnoreCase)) { hit = v; break; }
         if (hit == null) throw new BridgeError("target not visible");
         if (!hit.Alive) throw new BridgeError("target is already dead");
-        if (string.Equals(hit.Name, Game.Partner(me), StringComparison.OrdinalIgnoreCase)) throw new BridgeError("cannot kill your partner");
+        if (Game.IsPartner(me, hit.Name)) throw new BridgeError("cannot kill your partner");
         float range = KillRange();
         if (hit.Dist > range) throw new BridgeError($"target out of kill range ({hit.Dist:0.0} > {range:0.0})");
         DoKill(me, hit);

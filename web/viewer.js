@@ -164,7 +164,7 @@ function apply(e) {
     case 'vote_result': {
       const votes = S.events.filter((v) => v.type === 'vote' && v.seq < e.seq && v.seq > (S.lastResult ?? -1));
       S.lastResult = e.seq;
-      log(e.t, `Votes: ${votes.map((v) => `${nameOf(v.p)}→${nameOf(v.target)}`).join(', ')}`);
+      log(e.t, `Votes: ${votes.map((v) => `${nameOf(v.p)}→${nameOf(v.target)}${v.cast === false ? ' (not cast)' : ''}`).join(', ')}`);
       if (e.ejected) {
         Object.assign(P(e.ejected), { alive: false, ghost: true, ejected: true });
         render(P(e.ejected));
