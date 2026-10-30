@@ -83,6 +83,9 @@ One seat is one player is one model. `provider` picks the API:
 | `openrouter` | OpenRouter: almost any model with one key | `OPENROUTER_API_KEY` |
 | `ollama` | A local model through Ollama | none |
 | `custom` | Any OpenAI-compatible server: set `baseURL` and `apiKeyEnv` | yours |
+| `claude-code` | Your Claude subscription, through the signed-in Claude Code CLI | none |
+| `codex` | Your ChatGPT subscription, through the signed-in Codex CLI | none |
+| `antigravity` | Your Google subscription, through the signed-in Antigravity CLI (`agy`) | none |
 | `mock` | The rule-based bot | none |
 
 Model ids change often. The ids in `arena.config.example.json` are examples: check each provider's
@@ -94,6 +97,38 @@ personality), `effort` / `meetingEffort` (Claude: `low`…`max`), `extra` (extra
 OpenAI-compatible APIs, e.g. `{"reasoning_effort": "low"}`), `jsonMode` (`json_schema`, `json_object`
 or `none` if a server rejects `response_format`), `baseURL`, `apiKeyEnv`, `concurrency`,
 `enabled: false`.
+
+### Playing on a subscription
+
+`claude-code`, `codex` and `antigravity` seats cost no API money: each call runs your own signed-in CLI
+headless (`claude -p`, `codex exec`, `agy`) from an empty temporary folder, with no tools, no session
+saved and nothing from this project loaded. Sign in once (`claude` then `/login`, `codex login`, `agy`),
+then `node src/cli.js check`. An `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`, `GEMINI_API_KEY`) in `.env`
+is not passed to that CLI, so those seats use the subscription even when other seats use the API.
+
+```json
+{ "id": "haiku", "name": "Haiku", "color": "yellow", "provider": "claude-code", "model": "claude-haiku-5-5", "effort": "low" }
+{ "id": "gpt", "name": "GPT", "color": "green", "provider": "codex", "model": "gpt-5.6-luna", "effort": "low" }
+{ "id": "gemini", "name": "Gemini", "color": "blue", "provider": "antigravity", "model": "gemini-3.8-flash-low" }
+```
+
+- `model`: a Claude Code model id or alias (`haiku`, `sonnet`); a model your ChatGPT plan offers in Codex
+  (API-only ids such as `gpt-5-mini` are refused); an id from `agy models`, which includes the effort.
+- Starting a CLI takes 1-10 seconds, so each seat keeps one started process waiting for its next call
+  (about 100 MB for Claude Code, 200 MB for agy). `"warm": false` turns that off. The answer is taken
+  as soon as it streams out. `command` points at the binary if it is not on `PATH` (a string, or an
+  array such as `["node", "path/to/cli.js"]`); `timeoutMs` (default 180000) gives up on a stuck call.
+- Measured on Windows with a real roam prompt (4 KB system, 2 KB turn), median per call: Anthropic API
+  Haiku 2.0 s; `claude-code` Haiku 3.2 s with the started process, 4.4 s without; `antigravity` Gemini
+  Flash 3.8 s with rare 40-50 s stalls; `codex` 7 s. Claude Code is fast enough for the real game; Codex
+  and Antigravity seats stand still longer while they think.
+- **Usage limits.** Every call counts against your plan's limits, shared with your own use of Claude,
+  ChatGPT or Gemini (Claude: a 5-hour window and a weekly cap). A 6-player real-game match makes a few
+  hundred calls. Claude Code reports how much of the window is used: the match prints a warning when it
+  gets close, and once the limit is reached that seat's calls fail and it waits in place until the window
+  resets. Keep `concurrency` modest (default 4 calls at once per provider).
+- Claude Code may decline a turn with "safeguards flagged this message"; that counts as a refusal and
+  the seat waits, as with the API.
 
 Claude seats on Opus 5.5 / Opus 5 / Sonnet 5.5 / Fable 5.1 send `fallbacks: "default"`: if a safety
 classifier declines a turn, the API retries it on a fallback Claude model inside the same call. Set
@@ -219,6 +254,11 @@ npm run mock
 
 เปิด <http://localhost:7777> ดูแมตช์บอททดลอง (ไม่ใช้ API ไม่เสียเงิน) จากนั้นคัดลอก `arena.config.example.json`
 เป็น `arena.config.json` และ `.env.example` เป็น `.env` ใส่ API key แล้วรัน `node src/cli.js check` ก่อน `npm start`
+
+**เล่นด้วย subscription ไม่ใช้ API key:** ตั้ง `provider` ของ seat เป็น `claude-code` (Claude Code), `codex` (Codex / ChatGPT)
+หรือ `antigravity` (agy / Gemini) แล้ว login CLI นั้นไว้ก่อน ทุกครั้งที่ AI คิดจะเรียก CLI ที่ login ไว้ ไม่เสียค่า API
+แต่กินโควตาของแพ็กเกจ (Claude มีรอบ 5 ชั่วโมงและรอบรายสัปดาห์) รายละเอียดและความเร็วดูหัวข้อ
+[Playing on a subscription](#playing-on-a-subscription)
 
 **เล่นในเกม Among Us จริง:** `node src/cli.js real` เปิดเกมหนึ่งหน้าต่างต่อผู้เล่นหนึ่งคน (ตัวแรกเปิด lobby แบบ local
 ที่เหลือเข้าร่วม) แล้วให้ AI ชุดเดิมเล่นแบบเรียลไทม์ผ่าน mod AUBridge ต้องติดตั้ง BepInEx + AUBridge ในโฟลเดอร์เกมก่อน
