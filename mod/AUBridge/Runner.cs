@@ -83,6 +83,7 @@ public class Runner : MonoBehaviour
     static void Tick(float now)
     {
         ApplyIdentity(now);
+        ThaiFont.Tick(now);
         CloseAnnouncements(now);
         HandleMergePopup(now);
         PlayAgain(now);
