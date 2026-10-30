@@ -2,7 +2,7 @@
 // reply is split in two: secret_thought (kept, logged, shown to viewers) and the public part.
 
 import { EpisodicMemory } from './memory.js';
-import { SCHEMAS, roamPrompt, speakPrompt, votePrompt, reflectPrompt } from './prompts.js';
+import { SCHEMAS, roamSchema, roamPrompt, speakPrompt, votePrompt, reflectPrompt } from './prompts.js';
 
 export class FatalSeatError extends Error {}
 
@@ -68,6 +68,13 @@ export class Agent {
 
   async ask(kind, user, effort, context) {
     const spec = SCHEMAS[kind];
+    // On a roam turn, constrain `action` to THIS turn's legal ids so schema-enforcing providers
+    // cannot return an off-list action. Built from the seat's own view.legal, so simulator
+    // determinism and memory isolation are untouched. parseJson still runs on spec.schema: the
+    // enum variant only adds `enum` to the same `action` field, so field parsing is unchanged.
+    const reqSchema = kind === 'roam' && Array.isArray(context?.view?.legal) && context.view.legal.length
+      ? roamSchema(context.view.legal.map((a) => a.id))
+      : spec.schema;
     const started = Date.now();
     let res = null;
     let data = null;
@@ -77,7 +84,7 @@ export class Agent {
         : `${user}\n\nYour last reply was not one JSON object with the fields ${Object.keys(spec.schema.properties).join(', ')}. Reply again with that JSON only.`;
       try {
         res = await this.provider.complete({
-          system: this.system, user: prompt, schema: spec.schema, schemaName: spec.name, effort,
+          system: this.system, user: prompt, schema: reqSchema, schemaName: spec.name, effort,
           context: { ...context, kind, seat: this.seat, role: this.role, partners: this.partners },
         });
       } catch (e) {

@@ -19,6 +19,9 @@ export async function createAnthropic(seat, preset) {
         // The system prompt is fixed for the whole match, so cache it.
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: user }],
+        // Structured outputs honor `enum`, so for roam turns the per-turn action enum (built in
+        // agent.js from this turn's legal ids) is enforced here and the model cannot pick an
+        // off-list action. We pass whatever `schema` we were given through unchanged.
         output_config: { ...(effort ? { effort } : {}), format: { type: 'json_schema', schema } },
       };
       const res = fallback

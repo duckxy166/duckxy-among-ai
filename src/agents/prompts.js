@@ -22,7 +22,7 @@ export const SCHEMAS = {
     name: 'roam_decision',
     schema: obj({
       secret_thought: THOUGHT,
-      action: str('Exactly one action id from the list, for example "move:Electrical".'),
+      action: str('Exactly one action id, copied verbatim from the legal actions list for this turn (for example "move:Electrical"). It must be one of those ids and nothing else.'),
       say: str('Words you say out loud right now; only the players who can see you hear them. An empty string means you stay silent.'),
       note: str('A fact worth remembering for the next meeting, or an empty string.'),
     }),
@@ -48,6 +48,25 @@ export const SCHEMAS = {
     schema: obj({ secret_thought: THOUGHT, ok: str('Always "yes".') }),
   },
 };
+
+// The legal actions change every turn, so the roam schema's `action` enum must be built per-turn
+// from THIS turn's legal ids. Schema-enforcing providers (Anthropic structured outputs, OpenAI
+// json_schema strict) then cannot return an off-list action; the rest still get the ids in the
+// prompt text and fall back to agent.js's matchAction. We clone instead of mutating the shared
+// SCHEMAS.roam object so the cached base schema stays byte-stable for other kinds and turns (and
+// so parseJson keeps iterating the same fields). An empty enum is rejected by some providers, so
+// with no legal ids we return the base schema unchanged.
+export function roamSchema(legalIds) {
+  const base = SCHEMAS.roam.schema;
+  if (!Array.isArray(legalIds) || legalIds.length === 0) return base;
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      action: { ...base.properties.action, enum: [...legalIds] },
+    },
+  };
+}
 
 // realGame: the players are in the real Among Us (src/bridge), where time does not stop and the chat
 // has a 100-character limit.
