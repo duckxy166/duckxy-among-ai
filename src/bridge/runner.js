@@ -26,13 +26,33 @@ export const DEFAULT_LOBBY = {
 const CHAT_MAX = 100;
 const quote = (s, n = 160) => (s ? `"${s.length > n ? `${s.slice(0, n - 1)}…` : s}"` : '(quiet)');
 
-// The game refuses longer messages; cut at a word boundary when there is one.
-export function fitChat(text) {
-  const t = String(text ?? '').replace(/\s+/g, ' ').trim();
-  if (t.length <= CHAT_MAX) return t;
-  const cut = t.slice(0, CHAT_MAX - 1);
-  const space = cut.lastIndexOf(' ');
-  return `${space > CHAT_MAX * 0.6 ? cut.slice(0, space) : cut}…`;
+const WORDS = new Intl.Segmenter('th', { granularity: 'word' }); // also finds word breaks in Thai, which has no spaces
+const THAI_MARK = /[ัิ-ฺ็-๎]/;
+
+// Each line of a chat message goes out on its own, and the game refuses messages over 100 characters,
+// so a longer line goes out as several, split at word breaks.
+export function splitChat(text) {
+  return String(text ?? '').split('\n').flatMap(splitLine);
+}
+
+function splitLine(line) {
+  let t = line.replace(/\s+/g, ' ').trim();
+  const parts = [];
+  while (t.length > CHAT_MAX) {
+    let cut = 0;
+    for (const { index } of WORDS.segment(t)) {
+      if (index > CHAT_MAX) break;
+      cut = index;
+    }
+    if (cut < CHAT_MAX * 0.4) { // one very long word: cut it, but never before a Thai vowel or tone mark
+      cut = CHAT_MAX;
+      while (cut > 1 && THAI_MARK.test(t[cut])) cut--;
+    }
+    parts.push(t.slice(0, cut).trim());
+    t = t.slice(cut).trim();
+  }
+  if (t) parts.push(t);
+  return parts;
 }
 
 // The reactor panel (console 0 or 1) to send seat `s` to: the one fewer other living seats are fixing
@@ -265,10 +285,12 @@ export async function runBridgeMatch({
         if (m.ended || match.over) break;
         emit({ type: 'thinking', players: [s.id] });
         const r = await agents.get(s.id).speak(info, transcript, round, config.discussionRounds);
-        const text = fitChat(r.chat);
+        const parts = splitChat(r.chat);
+        const text = parts.join('\n');
         let sendError = null;
-        if (text && !m.ended) {
-          const a = await s.client.act({ do: 'chat', text });
+        for (let i = 0; i < parts.length && !m.ended && !sendError; i++) {
+          if (i > 0) await sleep(1100); // the mod allows one message per second
+          const a = await s.client.act({ do: 'chat', text: parts[i] });
           if (!a.ok) sendError = `chat: ${a.error}`;
         }
         transcript.push({ name: s.name, text });

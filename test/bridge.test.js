@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runBridgeMatch, fitChat, freePanel } from '../src/bridge/runner.js';
+import { runBridgeMatch, splitChat, freePanel } from '../src/bridge/runner.js';
 import { BridgeClient } from '../src/bridge/client.js';
 import { BridgeSeat, until } from '../src/bridge/seat.js';
 import { roamPrompt } from '../src/agents/prompts.js';
@@ -102,9 +102,9 @@ test('a scripted round through the bridge: kill, report, chat, vote, crew win', 
     const meeting = of('meeting_start')[0];
     assert.deepEqual([meeting.reason, meeting.body], ['body', 'green']);
 
-    // Chat goes through the game, cut to its 100-character limit.
+    // Chat goes through the game; the crew's long lines go out in two messages under its 100-character limit.
     const sent = ship.ship.calls.filter((c) => c.do === 'chat');
-    assert.equal(sent.length, 3);
+    assert.equal(sent.length, 5);
     assert.ok(sent.every((c) => c.text.length <= 100));
     assert.deepEqual(of('vote').map((v) => `${v.p}>${v.target}`).sort(), ['blue>pink', 'pink>skip', 'red>pink']);
     const result = of('vote_result')[0];
@@ -445,11 +445,12 @@ test('a busy vote that is not the last one counts when asking again gets "alread
 
 test('a vote that misses the voting time is not counted', async () => {
   // Voting closes before Blue makes up its mind; the results screen shows Blue did not vote.
-  // (The runner waits 1.5 s for the meeting screen and a chat round before anyone votes.)
-  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, votingMs: 2500, resultsMs: 4000 });
+  // (The runner waits 1.5 s for the meeting screen and a chat round, with the crew's long lines sent in two
+  // messages 1.1 s apart, before anyone votes.)
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, votingMs: 5000, resultsMs: 4000 });
   try {
     const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [])]));
-    providers.set('blue', slowVoter(providers.get('blue'), 3500));
+    providers.set('blue', slowVoter(providers.get('blue'), 6000));
     const r = await play(ship, providers);
     const of = (type) => r.events.filter((e) => e.type === type);
     assert.equal(of('match_error').length, 0);
@@ -670,9 +671,18 @@ test('names, chat length and launch arguments', () => {
   assert.equal(roomToBridge('O2'), 'LifeSupp');
   assert.equal(colorId('pink'), 3);
   const long = `${'word '.repeat(40)}end`;
-  const cut = fitChat(long);
-  assert.ok(cut.length <= 100 && cut.endsWith('…') && !cut.includes('wor…'));
-  assert.equal(fitChat('  short   text '), 'short text');
+  const parts = splitChat(long);
+  assert.ok(parts.length === 3 && parts.every((p) => p.length <= 100 && /^word|end$/.test(p) && !/ $|^ /.test(p)));
+  assert.equal(parts.join(' '), long);
+  assert.deepEqual(splitChat('  short   text '), ['short text']);
+  assert.deepEqual(splitChat(''), []);
+  assert.deepEqual(splitChat("Haiku5 is the killer!!\n trust me bro \n\nnot me, it's HIM"), ['Haiku5 is the killer!!', 'trust me bro', "not me, it's HIM"]);
+  const thai = 'ฉันอยู่ Electrical กับ Haiku1 ตั้งแต่ 00:24 ทำ Divert Power ไม่เคยเห็นศพ Haiku5 บอกเจอฉันอยู่ตรงศพ แต่ฉันไม่ได้ไปที่นั่นเลยสักครั้ง';
+  const th = splitChat(thai);
+  assert.ok(th.length === 2 && th.every((p) => p.length <= 100 && !/^[ัิ-ฺ็-๎]/.test(p)));
+  assert.equal(th.join('').replace(/ /g, ''), thai.replace(/ /g, ''));
+  const word = 'ก'.repeat(99) + 'ี'.repeat(3) + 'ข'.repeat(20); // no word break: a hard cut, never before a mark
+  assert.ok(splitChat(word).every((p) => p.length <= 100 && !/^[ัิ-ฺ็-๎]/.test(p)));
   const args = launchArgs({ id: 2, mode: 'join', name: 'Kimi', color: 'purple', token: TOKEN, port: 47002 });
   assert.ok(args.includes('--aub-mode=join') && args.includes('--aub-color=8') && args.includes('--aub-port=47002'));
   const b64 = args.find((a) => a.startsWith('--aub-nameb64=')).split('=')[1];

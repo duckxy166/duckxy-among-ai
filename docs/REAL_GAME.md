@@ -20,7 +20,7 @@ gives high-level actions and honest, on-screen-only events. Our simulator was bu
 | `task:<id>` / `fake:<id>` | `do_task {id}` / `move_to` + `stay` |
 | `report` / `emergency` | `report` / `call_meeting` |
 | `kill:<Name>` / `vent:<Room>` / `sabotage:<kind>` / `fix` | `kill` / `vent` / `sabotage` / `fix` |
-| meeting `chat_message` / `vote` | `chat {text}` (100 characters max) / `vote {target}` |
+| meeting `chat_message` / `vote` | `chat {text}` per line, a line over 100 characters split at word breaks / `vote {target}` |
 | free-roam `say` | none: the runner gives the line to every seat whose copy shows the speaker (memory and event log only) |
 
 | AUBridge event | Among AI memory kind |
