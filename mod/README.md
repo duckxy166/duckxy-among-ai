@@ -24,6 +24,8 @@ changes below are by Duckxy under the same license. Upstream's protocol specs (`
 | `Actions.cs` `VentsForState` | every vent in `state.vents` (and the one the impostor is inside) lists `to`: its neighbours' ids and rooms | the brains pick a vent by the room it leads to |
 | `Game.cs` `Configure()` | also turns off `RoleTypes.Judge` and `RoleTypes.SpiritGuide` | new in 2026.9.29; nobody can press their buttons |
 | `Window.cs` (new), `Plugin.cs` | each window is titled `Among Us - <name>`; `--aub-window=WxH` keeps it windowed at that size; `--aub-sound=1` keeps a bot copy's sound on | to record every copy on its own with OBS: all copies are `Among Us.exe` with the same title, and bot copies were always muted |
+| `Pause.cs` (new), `Events.cs`, `Runner.cs`, `Bridge.cs` | `pause {on}` sets `Time.timeScale` 0/1; `Events.Now` leaves paused time out, so the mod's timers and event times stop too; a pause not renewed for 15 s ends by itself | game time stands still while the brains think, so slow models lose no time |
+| `Game.cs`, `GamePatches.cs` `PSelectRoles`, `Bridge.cs` | `impostors {names}` (host): a prefix on `RoleManager.SelectRoles` deals Impostor to those players and Crewmate to the rest | to choose the impostor for an episode |
 | `ThaiFont.cs` (new) | a TMP font asset from Windows' Leelawadee UI (or Tahoma) becomes a fallback of every game font | the game's fonts have no Thai glyphs, so Thai chat showed as boxes |
 
 Details and test results: [docs/REAL_GAME.md](../docs/REAL_GAME.md).

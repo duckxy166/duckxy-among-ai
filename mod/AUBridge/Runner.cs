@@ -68,9 +68,11 @@ public class Runner : MonoBehaviour
         }
         // Bot copies stay silent. The game sets its own mixer volumes, but never the global listener volume.
         if (Plugin.Cfg.Mute && !Plugin.Cfg.Sound && AudioListener.volume != 0f) AudioListener.volume = 0f;
+        Pause.Tick();
+        float game = Events.Now; // stands still while paused
+        Game.Update(game);
+        try { Body.Update(game); } catch (Exception e) { Plugin.Logger.LogError("[AUB] body: " + e.Message); }
         float now = Time.realtimeSinceStartup;
-        Game.Update(now);
-        try { Body.Update(now); } catch (Exception e) { Plugin.Logger.LogError("[AUB] body: " + e.Message); }
         if (now < _nextTick) return;
         _nextTick = now + 0.5f;
         try { Tick(now); }

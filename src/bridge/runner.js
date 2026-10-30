@@ -15,6 +15,7 @@ import { BOARD, ROOMS, EDGES, VENT_GROUPS, COLORS } from '../engine/map.js';
 import { DEFAULT_RULES, namesIn } from '../engine/game.js';
 import { say, clock } from '../i18n.js';
 import { BridgeSeat, sleep, until } from './seat.js';
+import { createFreezer } from './freeze.js';
 
 // Lobby options sent with `configure` (AUBridge names). Discussion and voting are long because the
 // models speak in turns through the real chat.
@@ -73,19 +74,26 @@ export async function runBridgeMatch({
   const lobby = { ...DEFAULT_LOBBY, ...(bridge.lobby ?? {}) };
   // The game needs 7 players for 2 impostors and 9 for 3; ask for more and `start` is refused.
   const allowed = seats.length >= 9 ? 3 : seats.length >= 7 ? 2 : 1;
-  const impostors = Math.min(config.rules?.impostors ?? (seats.length <= 6 ? 1 : 2), allowed);
+  // bridge.impostors: the seats (ids or names) who play the impostors, instead of the game's random pick.
+  const chosen = (bridge.impostors ?? []).map((k) => seats.find((s) => s.id === k || s.name === k));
+  if (chosen.some((s) => !s)) throw new Error(`bridge.impostors: no seat ${bridge.impostors[chosen.indexOf(undefined)]}`);
+  if (chosen.length > allowed) throw new Error(`bridge.impostors: ${chosen.length} impostors need ${chosen.length === 2 ? 7 : 9} or more players`);
+  const impostors = chosen.length || Math.min(config.rules?.impostors ?? (seats.length <= 6 ? 1 : 2), allowed);
   const rules = {
     ...DEFAULT_RULES, ...config.rules, impostors,
     confirmEjects: lobby.confirmEjects, emergenciesPerPlayer: lobby.emergencyMeetings, killCooldown: lobby.killCooldown,
   };
   const maxMs = (bridge.maxMinutes ?? 20) * 60000;
+  const freezer = createFreezer([...clients.values()], { enabled: bridge.freeze !== false, warn: (t) => log(`  ! ${t}`) });
+  // Game time: real time minus the time the game stood still while brains were thinking.
+  const gameMs = () => Date.now() - freezer.pausedMs();
 
   fs.mkdirSync(dir, { recursive: true });
   const eventsFd = fs.openSync(path.join(dir, 'events.jsonl'), 'w');
   const promptsFd = config.logPrompts ? fs.openSync(path.join(dir, 'prompts.jsonl'), 'w') : null;
   const events = [];
   let t0 = 0;
-  const now = () => (t0 ? (Date.now() - t0) / 1000 : 0);
+  const now = () => (t0 ? (gameMs() - t0) / 1000 : 0);
   const emit = (e) => {
     const ev = { seq: events.length, t: Math.round(now() * 10) / 10, ...e };
     fs.writeSync(eventsFd, `${JSON.stringify(ev)}\n`);
@@ -226,7 +234,7 @@ export async function runBridgeMatch({
         const view = s.view(why);
         if (!view.legal.length) continue; // a ghost impostor with no sabotage ready
         emit({ type: 'thinking', players: [s.id] });
-        const r = await agent.decideRoam(view);
+        const r = await freezer.think(() => agent.decideRoam(view));
         emit({ type: 'decision', p: s.id, reason: why, thought: r.thought, action: r.action, raw: r.raw, say: r.say, note: r.note, error: r.error, ms: r.ms, model: r.model });
         if (match.meeting || match.over || !s.acts) continue;
         relaySay(s, r.say); // said where they stand, before the order moves them (a ghost is not heard)
@@ -284,7 +292,7 @@ export async function runBridgeMatch({
       for (const s of order) {
         if (m.ended || match.over) break;
         emit({ type: 'thinking', players: [s.id] });
-        const r = await agents.get(s.id).speak(info, transcript, round, config.discussionRounds);
+        const r = await freezer.think(() => agents.get(s.id).speak(info, transcript, round, config.discussionRounds));
         const parts = splitChat(r.chat);
         const text = parts.join('\n');
         let sendError = null;
@@ -300,13 +308,13 @@ export async function runBridgeMatch({
 
     // Votes: every copy runs its own meeting timer, so each seat waits for its own copy to open voting.
     const options = alive.map((s) => s.name);
-    const voteBy = Date.now() + (lobby.discussion + lobby.voting + 20) * 1000;
+    const voteBy = gameMs() + (lobby.discussion + lobby.voting + 20) * 1000; // the meeting timers stop while paused
     emit({ type: 'thinking', players: alive.map((s) => s.id), voting: true });
     const ballots = await Promise.all(alive.map(async (s) => {
-      const v = await agents.get(s.id).vote(info, transcript, options);
+      const v = await freezer.think(() => agents.get(s.id).vote(info, transcript, options));
       let res = null;
       let cast = false;
-      while (!m.ended && !match.over && Date.now() < voteBy) {
+      while (!m.ended && !match.over && gameMs() < voteBy) {
         const st = await s.refresh().catch(() => null);
         if (st?.phase === 'voting') {
           res = await s.client.act({ do: 'vote', target: v.vote });
@@ -409,6 +417,7 @@ export async function runBridgeMatch({
 
     const conf = { impostors, ...lobby };
     const configured = await host.client.call('configure', conf);
+    await host.client.call('impostors', { names: chosen.map((s) => s.name) }); // [] = the game picks
     // `configure` turns off the special roles it knows; one a newer build adds would still be on.
     if (configured.options?.anyRoles) warn('the lobby still has special roles on, and the brains cannot use their buttons');
     await sleep(1000);
@@ -419,7 +428,7 @@ export async function runBridgeMatch({
       return sts.every((st) => st?.phase === 'tasks' && st.canMove);
     }, 120000, 1000);
     if (!moving) throw new Error('the game did not start on every copy within 120s');
-    t0 = Date.now();
+    t0 = gameMs();
 
     for (const s of list) {
       const me = s.state.me;
@@ -462,9 +471,11 @@ export async function runBridgeMatch({
     const loops = list.map((s) => seatLoop(s));
     for (const s of list) s.wake('start');
 
-    const timer = setTimeout(() => finish('none', 'timeout'), maxMs);
+    // maxMinutes counts game time, which stands still while the brains think.
+    const timer = setInterval(() => { if (now() * 1000 > maxMs) finish('none', 'timeout'); }, 1000);
     await overP;
-    clearTimeout(timer);
+    clearInterval(timer);
+    await freezer.stop();
     if (meetingTask) await meetingTask;
     stopAll();
     await Promise.all(loops);
@@ -478,6 +489,7 @@ export async function runBridgeMatch({
     throw e;
   } finally {
     stopAll();
+    await freezer.stop(); // never leave the copies paused
     emit({ type: 'stats', seats: Object.fromEntries([...agents].map(([id, a]) => [id, a.stats])) });
     fs.closeSync(eventsFd);
     if (promptsFd !== null) fs.closeSync(promptsFd);

@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { runBridgeMatch, splitChat, freePanel } from '../src/bridge/runner.js';
 import { BridgeClient } from '../src/bridge/client.js';
-import { BridgeSeat, until } from '../src/bridge/seat.js';
+import { BridgeSeat, until, sleep } from '../src/bridge/seat.js';
+import { createFreezer } from '../src/bridge/freeze.js';
 import { roamPrompt } from '../src/agents/prompts.js';
 import { launchArgs } from '../src/bridge/launcher.js';
 import { roomFromBridge, roomToBridge, colorId } from '../src/bridge/skeld.js';
@@ -21,10 +22,10 @@ const CONFIG = {
   bridge: { lobby: { discussion: 0, voting: 5 }, maxMinutes: 1 },
 };
 
-async function play(ship, providers, lobby = {}) {
+async function play(ship, providers, lobby = {}, bridge = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'among-ai-bridge-'));
   const clients = new Map(SEATS.map((s, i) => [s.id, new BridgeClient({ id: i + 1, port: ship.ports[i], token: TOKEN })]));
-  const config = { ...CONFIG, bridge: { ...CONFIG.bridge, lobby: { ...CONFIG.bridge.lobby, ...lobby } } };
+  const config = { ...CONFIG, bridge: { ...CONFIG.bridge, ...bridge, lobby: { ...CONFIG.bridge.lobby, ...lobby } } };
   return runBridgeMatch({ config, seats: SEATS, providers, clients, matchId: 'test-bridge', dir, memoryDir: path.join(dir, 'memory') });
 }
 
@@ -693,4 +694,59 @@ test('names, chat length and launch arguments', () => {
   const b64 = args.find((a) => a.startsWith('--aub-nameb64=')).split('=')[1];
   assert.equal(Buffer.from(b64, 'base64').toString('utf8'), 'Kimi');
   assert.throws(() => new BridgeClient({ id: 1, token: 'short' }), /16 or more/);
+});
+
+test('the game stands still while any brain thinks, and resumes when the last one is done', async () => {
+  const sent = [];
+  const fake = (id) => ({ id, request: async (cmd, args) => { sent.push(`${id}:${cmd}:${args.on}`); return { ok: true }; } });
+  const f = createFreezer([fake(1), fake(2)], { keepAliveMs: 60000 });
+  let release;
+  const slow = f.think(() => new Promise((r) => { release = r; }));
+  assert.equal(f.paused, true);
+  const quick = await f.think(async () => 'done');
+  assert.equal(quick, 'done');
+  assert.equal(f.paused, true); // the slow one is still thinking
+  await sleep(30);
+  release('late');
+  assert.equal(await slow, 'late');
+  assert.equal(f.paused, false);
+  assert.ok(f.pausedMs() >= 25);
+  await f.stop();
+  assert.deepEqual(sent, ['1:pause:true', '2:pause:true', '1:pause:false', '2:pause:false']);
+  await f.think(async () => null); // after stop: no more pauses
+  assert.equal(sent.length, 4);
+  const off = createFreezer([fake(3)], { enabled: false });
+  await off.think(async () => null);
+  assert.equal(sent.length, 4);
+});
+
+test('a scripted round pauses every copy around each brain call', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 2500 });
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [])]));
+    const r = await play(ship, providers);
+    assert.equal(r.winner, 'crew');
+    const pauses = ship.ship.calls.filter((c) => c.do === 'pause');
+    assert.ok(pauses.some((c) => c.on) && pauses.some((c) => !c.on));
+    for (const name of NAMES) assert.equal(pauses.filter((c) => c.who === name).at(-1).on, false, `${name} left paused`);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('bridge.impostors deals the impostor to the chosen seat', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN });
+  try {
+    const providers = new Map();
+    for (const s of SEATS) providers.set(s.id, await createProvider(s, { seed: 3 }));
+    const r = await play(ship, providers, {}, { impostors: ['blue'] });
+    assert.deepEqual(ship.ship.forced, ['Blue']);
+    const start = r.events.find((e) => e.type === 'match_start');
+    assert.deepEqual(start.players.filter((p) => p.role === 'impostor').map((p) => p.name), ['Blue']);
+  } finally {
+    await ship.close();
+  }
+  const seats = new Map();
+  await assert.rejects(play({ ports: [] }, seats, {}, { impostors: ['nobody'] }), /no seat nobody/);
+  await assert.rejects(play({ ports: [] }, seats, {}, { impostors: ['red', 'blue'] }), /need 7 or more players/);
 });
