@@ -199,6 +199,12 @@ table of every loaded font asset, scanning again every 5 s because fonts load wi
 (`mod/AUBridge/ThaiFont.cs`). Live, 4 copies, mock brains: each copy logged the font and 28 fallbacks
 added, and the meeting chat showed "ไม่เห็นอะไรเลย ทำ task อยู่" with the marks above and below in place.
 
+Recording every copy (2026-10-31): `bridge.window: "1920x1080"` and `bridge.sound: true` launch each copy
+windowed and borderless at that size (Unity's `-screen-width/-screen-height/-screen-fullscreen 0/-popupwindow`,
+and the mod corrects the size if the game's saved setting overrides it) with its sound on, and the mod titles
+each window `Among Us - <name>` so OBS can tell the copies apart. Live, 6 copies, mock brains: all six
+`UnityWndClass` windows read `Among Us - Haiku1` … `Haiku6` at a 1920×1080 client area.
+
 Still open:
 
 - Reactor fixes are not spread out. `act fix` without an `id` sends each crewmate to its nearest console,

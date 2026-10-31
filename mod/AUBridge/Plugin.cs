@@ -18,6 +18,8 @@ public sealed class AubConfig
     public string Token;
     public System.Collections.Generic.Dictionary<string, string> Outfit; // --aub-outfit=<base64 JSON>; validated against the catalog at apply time
     public bool Mute; // --aub-mute=1: no sound from this copy (bot windows; only the human's copy plays audio)
+    public bool Sound; // --aub-sound=1: a bot window plays its sound anyway (to record each copy's audio)
+    public int WindowWidth, WindowHeight; // --aub-window=WxH: windowed at this size
 
     public static AubConfig Parse(string[] args)
     {
@@ -54,6 +56,11 @@ public sealed class AubConfig
                     catch (Exception) { /* bad base64 / json: ignore the outfit */ }
                     break;
                 case "mute": c.Mute = v == "1" || v == "true"; break;
+                case "sound": c.Sound = v == "1" || v == "true"; break;
+                case "window":
+                    var wh = v.Split('x');
+                    if (wh.Length == 2 && int.TryParse(wh[0], out var ww) && int.TryParse(wh[1], out var hh) && ww >= 320 && hh >= 240 && ww <= 7680 && hh <= 4320) { c.WindowWidth = ww; c.WindowHeight = hh; }
+                    break;
             }
         }
         if (!hasId) return null;
@@ -95,7 +102,7 @@ public class Plugin : BasePlugin
         if (Cfg == null) { Log.LogInfo("[AUB] no --aub-id, plugin inactive"); return; }
         Log.LogInfo($"[AUB] id={Cfg.Id} mode={Cfg.Mode} name={Cfg.Name} color={Cfg.Color} outfit={(Cfg.Outfit != null ? string.Join(",", Cfg.Outfit.Keys) : "none")} port={Cfg.Port} token={(Cfg.Token != null ? "set" : "none")}");
 
-        if (Cfg.Mute) Log.LogInfo("[AUB] audio muted");
+        if (Cfg.Mute) Log.LogInfo(Cfg.Sound ? "[AUB] bot window, sound on" : "[AUB] audio muted");
         var harmony = new Harmony(PluginId);
         harmony.PatchAll(typeof(Patches));
         foreach (var t in new[] { typeof(PMurder), typeof(PStartMeeting), typeof(PChat), typeof(PGameEnd), typeof(PVotingComplete), typeof(PCastVote), typeof(PVentEnter), typeof(PVentExit), typeof(PPhysics), typeof(PJoyKey) })
