@@ -76,7 +76,8 @@ Every request asks for JSON with a `secret_thought` plus the public part:
 | After the match | `lesson` (saved to `memory/<seat>.md`) |
 
 Claude seats get the schema enforced with structured outputs; OpenAI gets a strict JSON schema; other
-OpenAI-compatible providers get JSON mode plus the schema in the prompt. Bad JSON is retried once, an
+OpenAI-compatible providers get JSON mode plus the schema in the prompt, and so do the subscription CLIs
+(`claude-code`, `codex`, `antigravity`, one headless CLI run per call). Bad JSON is retried once, an
 unknown action becomes `wait:5`, and either counts as `invalid` in the seat's stats.
 
 **Isolation.** A brain gets `view(id)` (its own surroundings), its own memory and the public meeting
@@ -153,7 +154,7 @@ build on top (stats, highlight finders, your own overlay).
 | `src/engine/game.js` | The match state machine (`DEFAULT_RULES` at the top) |
 | `src/i18n.js` | Memory-log sentences in Thai and English |
 | `src/agents/` | Agent, memory, prompts and output schemas |
-| `src/providers/` | Anthropic, OpenAI-compatible and mock brains |
+| `src/providers/` | Anthropic, OpenAI-compatible, subscription CLI (`cli.js`) and mock brains |
 | `src/match/runner.js` | Runs a match and writes the event log |
 | `src/bridge/` | The real game through AUBridge: client, seat, real-time runner, launcher, Skeld names |
 | `src/server/server.js` | Viewer server: static files, live SSE, saved matches (`webRoot` swaps the page) |

@@ -1,6 +1,8 @@
 // Every seat talks to one provider. Claude goes through the Anthropic SDK; the rest speak the
 // OpenAI-compatible Chat Completions API, so one client covers GPT, Gemini, DeepSeek, Kimi,
-// Grok, OpenRouter and local Ollama. `mock` is a rule-based bot for free dry runs and tests.
+// Grok, OpenRouter and local Ollama. `claude-code`, `codex` and `antigravity` play on the user's
+// subscription through that signed-in CLI instead of an API key (cli.js). `mock` is a rule-based bot
+// for free dry runs and tests.
 
 export const PRESETS = {
   anthropic: { kind: 'anthropic', keyEnv: 'ANTHROPIC_API_KEY' },
@@ -12,6 +14,9 @@ export const PRESETS = {
   openrouter: { kind: 'openai', baseURL: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY', jsonMode: 'json_object' },
   ollama: { kind: 'openai', baseURL: 'http://localhost:11434/v1', keyEnv: null, jsonMode: 'json_object' },
   custom: { kind: 'openai', keyEnv: null, jsonMode: 'json_object' },
+  'claude-code': { kind: 'cli', cli: 'claude', keyEnv: null },
+  codex: { kind: 'cli', cli: 'codex', keyEnv: null },
+  antigravity: { kind: 'cli', cli: 'agy', keyEnv: null },
   mock: { kind: 'mock', keyEnv: null },
 };
 
@@ -58,6 +63,7 @@ export async function createProvider(seat, { seed = 0 } = {}) {
   let provider;
   if (preset.kind === 'anthropic') provider = (await import('./anthropic.js')).createAnthropic(seat, preset);
   else if (preset.kind === 'openai') provider = (await import('./openai-compat.js')).createOpenAICompat(seat, preset);
+  else if (preset.kind === 'cli') provider = (await import('./cli.js')).createCli(seat, preset);
   else provider = (await import('./mock.js')).createMock(seat, seed);
   provider = await provider;
 

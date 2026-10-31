@@ -101,7 +101,7 @@ async function finished(play, { matchId, hub }) {
     console.log(`Replay: node src/cli.js replay ${matchId}`);
   } catch (e) {
     if (!(e instanceof FatalSeatError)) throw e;
-    console.error(`\nMatch stopped: ${e.message}\nCheck that seat's API key and model id (node src/cli.js check).`);
+    console.error(`\nMatch stopped: ${e.message}\nCheck that seat's API key or CLI sign-in and its model id (node src/cli.js check).`);
     process.exitCode = 1;
   }
   if (hub) console.log(`Viewer still running at http://localhost:${port}/ (Ctrl+C to quit)`);
