@@ -205,6 +205,12 @@ and the mod corrects the size if the game's saved setting overrides it) with its
 each window `Among Us - <name>` so OBS can tell the copies apart. Live, 6 copies, mock brains: all six
 `UnityWndClass` windows read `Among Us - Haiku1` … `Haiku6` at a 1920×1080 client area.
 
+Meeting chat on screen (2026-11-01, `bridge.chat: true` → `--aub-chat=1`): with nobody clicking the chat
+button, a recorded copy showed only the voting panel. Each copy now opens its chat while the meeting is in
+discussion or voting and closes it for the results. Live, 4 and 6 copies, mock brains: at the first meeting
+every captured window showed the open chat with the Thai lines (a dead seat's too), no warning in the
+BepInEx log.
+
 Game time stands still while brains think (2026-10-31, `bridge.freeze`, on by default): from the moment
 any seat starts a model call until the last running one returns, the runner sends `pause {on:true}` to every
 copy (Time.timeScale 0: movement, kill cooldown, sabotage and meeting timers stop) and repeats it every 5 s;

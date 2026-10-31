@@ -20,6 +20,7 @@ public sealed class AubConfig
     public bool Mute; // --aub-mute=1: no sound from this copy (bot windows; only the human's copy plays audio)
     public bool Sound; // --aub-sound=1: a bot window plays its sound anyway (to record each copy's audio)
     public int WindowWidth, WindowHeight; // --aub-window=WxH: windowed at this size
+    public bool Chat; // --aub-chat=1: the meeting chat stays open on screen (to record what is said)
 
     public static AubConfig Parse(string[] args)
     {
@@ -57,6 +58,7 @@ public sealed class AubConfig
                     break;
                 case "mute": c.Mute = v == "1" || v == "true"; break;
                 case "sound": c.Sound = v == "1" || v == "true"; break;
+                case "chat": c.Chat = v == "1" || v == "true"; break;
                 case "window":
                     var wh = v.Split('x');
                     if (wh.Length == 2 && int.TryParse(wh[0], out var ww) && int.TryParse(wh[1], out var hh) && ww >= 320 && hh >= 240 && ww <= 7680 && hh <= 4320) { c.WindowWidth = ww; c.WindowHeight = hh; }

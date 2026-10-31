@@ -489,12 +489,30 @@ public static class Game
         GameLog.God(new Dictionary<string, object> { ["type"] = "god", ["t"] = Events.T, ["players"] = ps });
     }
 
+    // --aub-chat=1: nobody clicks the chat button on a bot copy, so its screen showed the voting panel and
+    // never what was said. The chat stays open through discussion and voting and closes for the results,
+    // so the votes show. Real time: the open/close animation is the game's, and it stops while paused.
+    static float _chatTriedAt = -10f;
+    static void ShowChat(bool open)
+    {
+        if (!Plugin.Cfg.Chat) return;
+        var hud = HudManager.Instance;
+        if (hud == null || hud.Chat == null) return;
+        var chat = hud.Chat;
+        if (chat.IsAnimating || (open ? chat.IsOpenOrOpening : chat.IsClosedOrClosing)) return;
+        float now = Time.realtimeSinceStartup;
+        if (now - _chatTriedAt < 1f) return;
+        _chatTriedAt = now;
+        try { if (open) chat.Toggle(); else chat.Close(); } catch (Exception e) { Warn("chat " + (open ? "open" : "close") + ": " + e.Message); }
+    }
+
     static void ObserveMeeting(PlayerControl me, float now)
     {
         var m = MeetingHud.Instance;
         if (m != null)
         {
             _noMeetingSince = 0;
+            ShowChat(m.state < MeetingHud.MeetingStates.Results);
             if (!_inMeeting)
             {
                 string rb = null;
