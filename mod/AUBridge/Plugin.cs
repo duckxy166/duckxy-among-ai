@@ -105,7 +105,7 @@ public class Plugin : BasePlugin
         if (Cfg.Mute) Log.LogInfo(Cfg.Sound ? "[AUB] bot window, sound on" : "[AUB] audio muted");
         var harmony = new Harmony(PluginId);
         harmony.PatchAll(typeof(Patches));
-        foreach (var t in new[] { typeof(PMurder), typeof(PStartMeeting), typeof(PChat), typeof(PGameEnd), typeof(PVotingComplete), typeof(PCastVote), typeof(PVentEnter), typeof(PVentExit), typeof(PPhysics), typeof(PJoyKey) })
+        foreach (var t in new[] { typeof(PMurder), typeof(PSelectRoles), typeof(PStartMeeting), typeof(PChat), typeof(PGameEnd), typeof(PVotingComplete), typeof(PCastVote), typeof(PVentEnter), typeof(PVentExit), typeof(PPhysics), typeof(PJoyKey) })
         {
             try { harmony.CreateClassProcessor(t).Patch(); Log.LogInfo("[AUB] hook ok: " + t.Name); }
             catch (Exception e) { Log.LogWarning($"[AUB] hook {t.Name} failed: {e.Message}"); }

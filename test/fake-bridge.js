@@ -284,7 +284,7 @@ export async function startFakeShip({
     ship.phase = 'tasks';
     ship.t0 = Date.now();
     for (const p of players) {
-      if ([impostor].flat().includes(p.name)) p.role = 'impostor';
+      if ((ship.forced?.length ? ship.forced : [impostor].flat()).includes(p.name)) p.role = 'impostor';
       p.tasks = Array.from({ length: tasksPerPlayer }, (_, k) => ({ id: k, ...TASKS[(p.i + k) % TASKS.length] }));
     }
     for (const p of players) push(p, 'game_started', { role: p.role, partner: partners(p)[0] ?? null, partners: partners(p), tasks: p.tasks.length });
@@ -303,6 +303,8 @@ export async function startFakeShip({
       case 'start': return start();
       case 'act': return act(p, msg);
       case 'autopilot': ship.calls.push({ who: p.name, do: 'autopilot', on: msg.on }); return { ok: true };
+      case 'impostors': ship.forced = msg.names; return { ok: true };
+      case 'pause': ship.calls.push({ who: p.name, do: 'pause', on: msg.on, at: Date.now() }); return { ok: true };
       case 'wait_event': {
         const since = msg.since ?? 0;
         const fresh = () => p.events.filter((e) => e.seq > since);

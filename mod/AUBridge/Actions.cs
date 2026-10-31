@@ -147,7 +147,7 @@ public static partial class Body
         foreach (var ch in t) if (char.IsControl(ch)) throw new BridgeError("chat text has control characters");
         bool lobby = AmongUsClient.Instance != null && AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Joined;
         if (!lobby && MeetingHud.Instance == null) throw new BridgeError("chat is only available in meetings (after meeting_started) and in the lobby");
-        float now = Events.Now;
+        float now = UnityEngine.Time.realtimeSinceStartup; // the game's own limit, in real time even while paused
         if (now - _lastChatAt < 1.0f) throw new BridgeError("chat too fast (1 message per second)");
         if (!me.RpcSendChat(t)) throw new BridgeError("chat was rejected by the game");
         _lastChatAt = now;

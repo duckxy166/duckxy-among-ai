@@ -787,6 +787,39 @@ public static class Game
         };
     }
 
+    // Host only: the players who must be the impostors at the next start; empty = the game's own random pick.
+    static string[] _forced = Array.Empty<string>();
+
+    public static void SetImpostors(string[] names)
+    {
+        var c = Client;
+        if (c == null || !c.AmHost) throw new BridgeError("not host");
+        _forced = names;
+        Plugin.Logger.LogInfo("[AUB] impostors: " + (names.Length > 0 ? string.Join(", ", names) : "random"));
+    }
+
+    // RoleManager.SelectRoles prefix: deal the roles from _forced. False = let the game pick (nothing
+    // forced, not the host, or a forced name is not in the game).
+    public static bool AssignForcedRoles()
+    {
+        if (_forced.Length == 0 || Client == null || !Client.AmHost) return false;
+        var all = PlayerControl.AllPlayerControls;
+        var names = new HashSet<string>();
+        for (int i = 0; i < all.Count; i++) if (all[i] != null && all[i].Data != null && !all[i].Data.Disconnected) names.Add(all[i].Data.PlayerName);
+        foreach (var n in _forced)
+        {
+            if (!names.Contains(n)) { Warn($"impostor {n} is not in the game: the game picks the roles"); return false; }
+        }
+        for (int i = 0; i < all.Count; i++)
+        {
+            var p = all[i];
+            if (p == null || p.Data == null || p.Data.Disconnected) continue;
+            p.RpcSetRole(Array.IndexOf(_forced, p.Data.PlayerName) >= 0 ? RoleTypes.Impostor : RoleTypes.Crewmate, false);
+        }
+        Plugin.Logger.LogInfo("[AUB] roles dealt: impostors " + string.Join(", ", _forced));
+        return true;
+    }
+
     public static void Start()
     {
         var o = HostOptions();

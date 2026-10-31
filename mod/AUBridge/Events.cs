@@ -16,7 +16,7 @@ public static class Events
     static long _seq;
     public static float T0; // Time.realtimeSinceStartup at game start
 
-    public static float Now => UnityEngine.Time.realtimeSinceStartup;
+    public static float Now => UnityEngine.Time.realtimeSinceStartup - Pause.Elapsed; // game time: stands still while paused
     public static double T => Math.Round(Math.Max(0, Now - T0), 2);
 
     public static void Add(string type, params object[] kv)

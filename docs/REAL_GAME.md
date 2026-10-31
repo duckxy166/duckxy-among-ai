@@ -205,6 +205,18 @@ and the mod corrects the size if the game's saved setting overrides it) with its
 each window `Among Us - <name>` so OBS can tell the copies apart. Live, 6 copies, mock brains: all six
 `UnityWndClass` windows read `Among Us - Haiku1` … `Haiku6` at a 1920×1080 client area.
 
+Game time stands still while brains think (2026-10-31, `bridge.freeze`, on by default): from the moment
+any seat starts a model call until the last running one returns, the runner sends `pause {on:true}` to every
+copy (Time.timeScale 0: movement, kill cooldown, sabotage and meeting timers stop) and repeats it every 5 s;
+a copy that hears nothing for 15 s resumes by itself. The runner's clock, `maxMinutes` and the vote deadline
+count game time. Live, 6 copies: mock brains, 50 pauses per copy, crew won by vote at 3:01 with no error;
+6 Claude Haiku 5.5 seats, by 0:48 of game time the game had stood still for 77.8 s, crew won by vote at 1:39.
+
+Choosing the impostors (2026-10-31, `bridge.impostors`: seat ids or names): the host copy gets
+`impostors {names}` after `configure`, and a prefix on `RoleManager.SelectRoles` deals Impostor to them and
+Crewmate to everyone else (a name not in the game falls back to the game's own pick). Live, 6 copies, mock
+brains, `["h3"]`: the host logged "roles dealt: impostors Haiku3" and Haiku3's copy read `impostor`.
+
 Still open:
 
 - Reactor fixes are not spread out. `act fix` without an `id` sends each crewmate to its nearest console,
