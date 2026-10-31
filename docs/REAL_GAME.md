@@ -20,7 +20,7 @@ gives high-level actions and honest, on-screen-only events. Our simulator was bu
 | `task:<id>` / `fake:<id>` | `do_task {id}` / `move_to` + `stay` |
 | `report` / `emergency` | `report` / `call_meeting` |
 | `kill:<Name>` / `vent:<Room>` / `sabotage:<kind>` / `fix` | `kill` / `vent` / `sabotage` / `fix` |
-| meeting `chat_message` / `vote` | `chat {text}` (100 characters max) / `vote {target}` |
+| meeting `chat_message` / `vote` | `chat {text}` per line, a line over 100 characters split at word breaks / `vote {target}` |
 | free-roam `say` | none: the runner gives the line to every seat whose copy shows the speaker (memory and event log only) |
 
 | AUBridge event | Among AI memory kind |
@@ -201,10 +201,34 @@ Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
 - The viewer could miss "X sabotaged" when another copy's `sabotage` event came before the impostor's own
   `act` reply. Only the `act` reply writes it now.
 
+Thai in the game's chat (2026-10-30): with 6 Claude Haiku 5.5 seats (crew won by vote at 1:10) the
+meeting chat showed every Thai character as a box: the game's TextMeshPro fonts have no Thai glyphs.
+The mod now builds a dynamic TMP font asset from Leelawadee UI (`C:\Windows\Fonts\LeelawUI.ttf`,
+then `leelawad.ttf` or Tahoma) and adds it to `TMP_Settings.fallbackFontAssets` and to the fallback
+table of every loaded font asset, scanning again every 5 s because fonts load with scenes
+(`mod/AUBridge/ThaiFont.cs`). Live, 4 copies, mock brains: each copy logged the font and 28 fallbacks
+added, and the meeting chat showed "ไม่เห็นอะไรเลย ทำ task อยู่" with the marks above and below in place.
+
+Recording every copy (2026-10-31): `bridge.window: "1920x1080"` and `bridge.sound: true` launch each copy
+windowed and borderless at that size (Unity's `-screen-width/-screen-height/-screen-fullscreen 0/-popupwindow`,
+and the mod corrects the size if the game's saved setting overrides it) with its sound on, and the mod titles
+each window `Among Us - <name>` so OBS can tell the copies apart. Live, 6 copies, mock brains: all six
+`UnityWndClass` windows read `Among Us - Haiku1` … `Haiku6` at a 1920×1080 client area.
+
+Game time stands still while brains think (2026-10-31, `bridge.freeze`, on by default): from the moment
+any seat starts a model call until the last running one returns, the runner sends `pause {on:true}` to every
+copy (Time.timeScale 0: movement, kill cooldown, sabotage and meeting timers stop) and repeats it every 5 s;
+a copy that hears nothing for 15 s resumes by itself. The runner's clock, `maxMinutes` and the vote deadline
+count game time. Live, 6 copies: mock brains, 50 pauses per copy, crew won by vote at 3:01 with no error;
+6 Claude Haiku 5.5 seats, by 0:48 of game time the game had stood still for 77.8 s, crew won by vote at 1:39.
+
+Choosing the impostors (2026-10-31, `bridge.impostors`: seat ids or names): the host copy gets
+`impostors {names}` after `configure`, and a prefix on `RoleManager.SelectRoles` deals Impostor to them and
+Crewmate to everyone else (a name not in the game falls back to the game's own pick). Live, 6 copies, mock
+brains, `["h3"]`: the host logged "roles dealt: impostors Haiku3" and Haiku3's copy read `impostor`.
+
 Still open:
 
-- Whether the game's chat font shows Thai. The text reaches the game without errors, but the chat window
-  only opens on a click, so no screenshot shows it yet.
 - Real models: real time means slow models leave their player idle. Not measured yet.
 - 8 copies at once: 7 work (above), 8 would need roughly another 750 MB.
 - The mock brains rarely eject anybody in the real game, so a ghost impostor shows up only in the scripted

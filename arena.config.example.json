@@ -14,7 +14,7 @@
     "maxGameSeconds": 900
   },
   "bridge": {
-    "_comment": "Only for `node src/cli.js real`: the real Among Us through the AUBridge mod (docs/REAL_GAME.md). gamePath: your Among Us.exe with BepInEx and AUBridge installed. lobby: options sent to the host copy.",
+    "_comment": "Only for `node src/cli.js real`: the real Among Us through the AUBridge mod (docs/REAL_GAME.md). gamePath: your Among Us.exe with BepInEx and AUBridge installed. lobby: options sent to the host copy. window (e.g. \"1920x1080\") and sound: true open every copy windowed at that size with its sound on, to record each one on its own. freeze (default true): game time stands still while any brain is thinking, so slow models lose no time. impostors: seat ids that play the impostors instead of a random pick (1 from 4 players, 2 from 7, 3 from 9).",
     "gamePath": "",
     "lobby": { "killCooldown": 25, "discussion": 30, "voting": 150, "commonTasks": 1, "shortTasks": 2, "longTasks": 1, "confirmEjects": true, "emergencyMeetings": 1 },
     "maxMinutes": 20
@@ -27,6 +27,9 @@
     { "id": "kimi", "name": "Kimi", "color": "purple", "provider": "kimi", "model": "kimi-latest", "label": "Kimi" },
     { "id": "grok", "name": "Grok", "color": "black", "provider": "xai", "model": "grok-4", "label": "Grok" },
     { "id": "haiku", "name": "Haiku", "color": "yellow", "provider": "anthropic", "model": "claude-haiku-5-5", "label": "Claude Haiku 5.5", "effort": "low" },
-    { "id": "qwen", "name": "Qwen", "color": "red", "provider": "openrouter", "model": "qwen/qwen3-max", "label": "Qwen" }
+    { "id": "qwen", "name": "Qwen", "color": "red", "provider": "openrouter", "model": "qwen/qwen3-max", "label": "Qwen" },
+    { "_comment": "Subscription seats: no API key, they run your signed-in CLI (README: Playing on a subscription). Set enabled to true to use one; a match takes 4 to 10 enabled seats.", "id": "sonnet-sub", "name": "Sonnet", "color": "white", "provider": "claude-code", "model": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5 (Claude Code)", "effort": "low", "enabled": false },
+    { "id": "gpt-sub", "name": "Codex", "color": "lime", "provider": "codex", "model": "gpt-5.6-luna", "label": "GPT-5.6 Luna (Codex)", "effort": "low", "enabled": false },
+    { "id": "gemini-sub", "name": "Agy", "color": "brown", "provider": "antigravity", "model": "gemini-3.8-flash-low", "label": "Gemini 3.8 Flash (Antigravity)", "enabled": false }
   ]
 }

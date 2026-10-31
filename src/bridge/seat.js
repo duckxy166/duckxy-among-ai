@@ -416,10 +416,15 @@ export class BridgeSeat {
         plan = { kind: 'button', moving: true, until: now + 60 };
         break;
       case 'fix': {
+        // The ledger holds the panel from now on, so a crewmate deciding while this order is on its
+        // way is sent to the other one.
         const type = this.state?.sabotage?.active;
         const panel = this.match.ledger.reactorPanel(this.id, type);
-        r = await send({ do: 'fix', type, id: panel });
-        if (!r.ok) this.match.ledger.releasePanel(this.id); // no fix plan ever held it
+        try {
+          r = await send({ do: 'fix', type, id: panel });
+        } finally {
+          if (!r?.ok) this.match.ledger.releasePanel(this.id); // no fix plan ever held it
+        }
         plan = { kind: 'fix', type, panel, moving: true, until: now + 90 };
         break;
       }
@@ -448,7 +453,9 @@ export class BridgeSeat {
 
   rejected(action, reason) {
     this.note(this.match.now(), 'rejected', 'rejected', { action, reason: reason ?? '?' });
-    this.plan = null;
+    // The copy refuses an order before it drops the old one, so a body at a sabotage panel stays
+    // there: keep that plan (the panel stays taken), drop any other.
+    if (this.plan?.kind !== 'fix') this.plan = null;
     // A short pause, so a brain that keeps picking an impossible action does not spin.
     setTimeout(() => this.wake('idle'), 1000);
     return { ok: false, error: reason };
