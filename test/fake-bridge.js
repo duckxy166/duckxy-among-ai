@@ -4,7 +4,7 @@
 
 import net from 'node:net';
 
-const ROOMS = ['Cafeteria', 'Admin', 'Electrical', 'MedBay', 'Nav'];
+const ROOMS = ['Cafeteria', 'Admin', 'Electrical', 'MedBay', 'Nav', 'Reactor'];
 const TASKS = [
   { name: 'FixWiring', room: 'Electrical' }, { name: 'SwipeCard', room: 'Admin' },
   { name: 'SubmitScan', room: 'MedBay' }, { name: 'StabilizeSteering', room: 'Nav' },
@@ -16,15 +16,24 @@ const VENTS = [
 const ventExits = (v) => v.to.map((id) => ({ id, room: VENTS.find((x) => x.id === id).room }));
 
 // impostor: one name or a list. sabotageCooldown: what `state` reports while no sabotage is on (99
-// keeps the mock brains from sabotaging).
-export async function startFakeShip({ names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300, sabotageCooldown = 99 }) {
-  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, sabotage: null, t0: Date.now(), calls: [], sockets: new Set() };
+// keeps the mock brains from sabotaging, 0 lets the impostor sabotage at once); a reactor sabotage is
+// lost after reactorMs. The copies of the players in `abstain` refuse their votes; those in `busyVote`
+// answer their first vote with "game thread busy" and cast it a moment later anyway. With votingMs,
+// voting closes after that long and whoever has not voted missed it. The results screen stays up for
+// resultsMs. The `stuckFix`-th reactor fix order (1, 2...) gets that player stuck on the way instead.
+export async function startFakeShip({
+  names, impostor, token, stepMs = 20, tasksPerPlayer = 2, votingDelayMs = 300, sabotageCooldown = 99, reactorMs = 3000,
+  abstain = [], busyVote = [], votingMs = 0, resultsMs = stepMs * 3, stuckFix = 0,
+}) {
+  const ship = { stage: 'lobby', phase: null, over: false, bodies: [], meeting: null, voted: [], sab: null, t0: Date.now(), calls: [], sockets: new Set(), fixes: 0 };
   const now = () => (Date.now() - ship.t0) / 1000;
   const players = names.map((name, i) => ({
     name, i, role: 'crewmate', alive: true, room: 'Cafeteria', vent: null, tasks: [], seenBodies: new Set(), events: [], seq: 0, waiters: [],
   }));
   const byName = (n) => players.find((p) => p.name === n);
   const isImp = (p) => p.role === 'impostor';
+  // Like the mod: every other impostor, and `partner` (the first one) for older readers.
+  const partners = (p) => (isImp(p) ? players.filter((o) => o !== p && isImp(o)).map((o) => o.name) : []);
   // Like the mod's Events.Add: a field called `type` is renamed `kind`.
   const push = (p, type, { type: kind, ...fields } = {}) => {
     p.seq++;
@@ -62,18 +71,40 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     else if (players.filter((p) => !isImp(p)).every((p) => p.tasks.every((t) => t.done))) end('crew', 'CrewmatesByTask');
   }
 
+  function fixed() {
+    clearTimeout(ship.sab.timer);
+    const kind = ship.sab.kind;
+    ship.sab = null;
+    all('sabotage_fixed', { type: kind });
+  }
+
+  // The reactor is fixed only while both panels (0 and 1) are held.
+  function hold(p, id) {
+    if (!ship.sab || ship.sab.kind !== 'reactor') return;
+    ship.sab.held.set(p.name, id);
+    if (new Set(ship.sab.held.values()).size === 2) fixed();
+  }
+
   function startMeeting(caller, body) {
     ship.phase = 'meeting';
     ship.meeting = { caller: caller.name, body, votes: new Map() };
     ship.bodies = [];
     all('meeting_started', { caller: caller.name, body });
-    setTimeout(() => { if (ship.meeting) { ship.phase = 'voting'; all('voting_started'); } }, votingDelayMs);
+    setTimeout(() => {
+      const m = ship.meeting;
+      if (!m) return;
+      ship.phase = 'voting';
+      all('voting_started');
+      if (votingMs) m.timer = setTimeout(() => { if (ship.meeting === m) resolveVotes(true); }, votingMs);
+    }, votingDelayMs);
   }
 
-  function resolveVotes() {
+  // timeUp: the voting time ran out, so the votes cast so far decide.
+  function resolveVotes(timeUp = false) {
     const m = ship.meeting;
     const living = players.filter((p) => p.alive);
-    if (!living.every((p) => m.votes.has(p.name))) return;
+    if (!timeUp && !living.every((p) => m.votes.has(p.name) || abstain.includes(p.name))) return;
+    clearTimeout(m.timer);
     const tally = {};
     let skip = 0;
     for (const v of m.votes.values()) if (v === 'skip') skip++; else tally[v] = (tally[v] || 0) + 1;
@@ -83,16 +114,18 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     const out = top > skip && !tie ? byName(ranked[0][0]) : null;
     ship.meeting = null;
     ship.phase = 'voting_result';
-    all('meeting_ended', { ejected: out?.name ?? null, tie, ...(out ? { wasImpostor: isImp(out) } : {}) });
-    if (out) out.alive = false;
-    checkWin();
+    ship.voted = [...m.votes.keys()];
+    // Like the mod: the results screen first, then meeting_ended (and the game's end, if this vote ends it).
     setTimeout(() => {
+      all('meeting_ended', { ejected: out?.name ?? null, tie, ...(out ? { wasImpostor: isImp(out) } : {}) });
+      if (out) out.alive = false;
+      checkWin();
       if (ship.over) return;
       ship.phase = 'tasks';
       for (const p of players) if (p.alive) moveTo(p, 'Cafeteria');
       // The mod forgets its sightings at a meeting, so everyone in view is seen anew.
       for (const p of players) if (p.alive) for (const o of near(p)) push(p, 'saw_player', { name: o.name, room: p.room });
-    }, stepMs * 3);
+    }, resultsMs);
   }
 
   function act(p, a) {
@@ -149,6 +182,22 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
       case 'call_meeting':
         later(() => startMeeting(p, null));
         return ok();
+      case 'sabotage': // a ghost impostor may sabotage too, as in the mod
+        if (!isImp(p)) return err('only an impostor can sabotage');
+        if (ship.sab) return err('a sabotage is already active');
+        ship.sab = { kind: a.type, held: new Map() };
+        if (a.type === 'reactor') ship.sab.timer = setTimeout(() => end('impostors', 'ImpostorsBySabotage'), reactorMs);
+        all('sabotage', { type: a.type });
+        return { ...ok(), type: a.type };
+      case 'fix':
+        if (isImp(p)) return err('impostors cannot repair sabotage');
+        if (!ship.sab || ship.sab.kind !== a.type) return err(`no active ${a.type} sabotage`);
+        if (a.type !== 'reactor') { later(fixed); return ok(); }
+        if (a.id !== undefined && a.id !== 0 && a.id !== 1) return err('no console with that id');
+        if (++ship.fixes === stuckFix) { later(() => push(p, 'stuck')); return ok(); }
+        // Like the mod, no id means the nearest panel: here always panel 1.
+        later(() => { moveTo(p, 'Reactor'); later(() => hold(p, a.id ?? 1)); });
+        return ok();
       case 'chat':
         if (!ship.meeting && ship.phase !== 'voting') return err('chat is only available in meetings');
         if (String(a.text ?? '').length > 100) return err('chat text too long (max 100)');
@@ -156,15 +205,16 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
         return ok();
       case 'vote':
         if (ship.phase !== 'voting' || !ship.meeting) return err('voting is not open yet');
+        if (abstain.includes(p.name)) return err('this copy refuses to vote');
+        if (ship.meeting.votes.has(p.name)) return err('already voted');
+        if (busyVote.includes(p.name)) {
+          const m = ship.meeting;
+          later(() => { if (ship.meeting === m && !m.votes.has(p.name)) { m.votes.set(p.name, a.target); resolveVotes(); } });
+          return err('game thread busy');
+        }
         ship.meeting.votes.set(p.name, a.target);
         resolveVotes();
         return ok();
-      case 'sabotage': // a ghost impostor may sabotage too, as in the mod
-        if (!isImp(p)) return err('only an impostor can sabotage');
-        if (ship.sabotage) return err('a sabotage is already active');
-        ship.sabotage = a.type;
-        all('sabotage', { type: a.type });
-        return { ...ok(), type: a.type };
       case 'vent': {
         if (!isImp(p) || !p.alive) return err('you cannot use vents');
         if (a.to !== undefined) {
@@ -209,19 +259,20 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
         me: {
           name: p.name, color: p.i, alive: p.alive, role: p.alive ? p.role : (imp ? 'ghost_imp' : 'ghost_crew'),
           pos: [0, 0], room: p.room, killCooldown: 0, killRange: imp ? 1.5 : 0, inVent: !!p.vent,
-          partner: imp ? players.find((o) => o !== p && isImp(o))?.name ?? null : null,
+          partner: partners(p)[0] ?? null, partners: partners(p),
         },
         tasks: p.tasks.map((t) => ({ id: t.id, name: t.name, room: t.room, done: !!t.done, ...(t.fake ? { fake: true } : {}) })),
         taskBar: crewTasks.length ? crewTasks.filter((t) => t.done).length / crewTasks.length : 0,
         visible: p.alive ? near(p).map((o) => ({ name: o.name, color: o.i, pos: [1, 0], room: o.room, alive: true, distance: 1, inVent: false })) : [],
         bodies: ship.bodies.filter((b) => b.room === p.room).map((b) => ({ name: b.name, color: 0, pos: [0, 1], room: b.room, distance: 0.5 })),
-        sabotage: { active: ship.sabotage, timer: 0, cooldown: imp && !ship.sabotage ? sabotageCooldown : 0 },
+        sabotage: { active: ship.sab?.kind ?? null, timer: ship.sab ? 30 : 0, cooldown: imp && !ship.sab ? sabotageCooldown : 0 },
         // Like the mod: vents in view with where they lead, plus the one the impostor is inside.
         vents: imp && p.alive ? [
           ...VENTS.filter((v) => v.room === p.room).map((v) => ({ id: v.id, pos: [2, 2], room: v.room, distance: 1, to: ventExits(v) })),
           ...(p.vent ? [{ current: p.vent.id, to: ventExits(p.vent) }] : []),
         ] : [],
-        meeting: ship.meeting ? { caller: ship.meeting.caller, reportedBody: ship.meeting.body } : null,
+        meeting: ship.meeting ? { caller: ship.meeting.caller, reportedBody: ship.meeting.body, voted: [...ship.meeting.votes.keys()] }
+          : ship.phase === 'voting_result' ? { voted: ship.voted } : null,
         busy: 'idle',
       },
     };
@@ -233,10 +284,10 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     ship.phase = 'tasks';
     ship.t0 = Date.now();
     for (const p of players) {
-      if ([impostor].flat().includes(p.name)) p.role = 'impostor';
+      if ((ship.forced?.length ? ship.forced : [impostor].flat()).includes(p.name)) p.role = 'impostor';
       p.tasks = Array.from({ length: tasksPerPlayer }, (_, k) => ({ id: k, ...TASKS[(p.i + k) % TASKS.length] }));
-      push(p, 'game_started', { role: p.role, partner: null, tasks: p.tasks.length });
     }
+    for (const p of players) push(p, 'game_started', { role: p.role, partner: partners(p)[0] ?? null, partners: partners(p), tasks: p.tasks.length });
     // Like the mod, everyone already in view counts as newly seen.
     for (const p of players) for (const o of near(p)) push(p, 'saw_player', { name: o.name, room: p.room });
     return { ok: true };
@@ -252,6 +303,8 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
       case 'start': return start();
       case 'act': return act(p, msg);
       case 'autopilot': ship.calls.push({ who: p.name, do: 'autopilot', on: msg.on }); return { ok: true };
+      case 'impostors': ship.forced = msg.names; return { ok: true };
+      case 'pause': ship.calls.push({ who: p.name, do: 'pause', on: msg.on, at: Date.now() }); return { ok: true };
       case 'wait_event': {
         const since = msg.since ?? 0;
         const fresh = () => p.events.filter((e) => e.seq > since);
@@ -296,6 +349,8 @@ export async function startFakeShip({ names, impostor, token, stepMs = 20, tasks
     players,
     ports: players.map((p) => p.port),
     async close() {
+      clearTimeout(ship.sab?.timer);
+      clearTimeout(ship.meeting?.timer);
       for (const p of players) { const w = p.waiters; p.waiters = []; w.forEach((f) => f()); }
       for (const s of ship.sockets) s.destroy();
       await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));

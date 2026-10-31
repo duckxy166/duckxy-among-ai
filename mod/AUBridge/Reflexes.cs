@@ -226,7 +226,7 @@ public static partial class Body
         var pos = me.GetTruePosition();
         float rad = Game.LightRadius(me);
         bool imp = Game.AmImpostor(me);
-        string partner = imp ? Game.Partner(me) : null;
+        var partners = new HashSet<string>(Game.Partners(me), StringComparer.OrdinalIgnoreCase); // empty unless impostor
         var vis = new List<Game.PInfo>();
         foreach (var v in Game.Visible(me, pos, rad)) if (v.Alive) vis.Add(v);
         var bodies = Game.Bodies(me, pos, rad);
@@ -255,10 +255,10 @@ public static partial class Body
             Game.PInfo pick = null; int pw = 0;
             foreach (var c in vis)
             {
-                if (c.Dist > range || string.Equals(c.Name, partner, StringComparison.OrdinalIgnoreCase)) continue;
+                if (c.Dist > range || partners.Contains(c.Name)) continue;
                 if (!string.IsNullOrEmpty(kd.Target) && !string.Equals(kd.Target, "any", StringComparison.OrdinalIgnoreCase) && !string.Equals(kd.Target, c.Name, StringComparison.OrdinalIgnoreCase)) continue;
                 int w = 0;
-                foreach (var o in vis) if (o.Id != c.Id && !string.Equals(o.Name, partner, StringComparison.OrdinalIgnoreCase)) w++;
+                foreach (var o in vis) if (o.Id != c.Id && !partners.Contains(o.Name)) w++;
                 if (w <= kd.MaxWitnesses && (pick == null || c.Dist < pick.Dist)) { pick = c; pw = w; }
             }
             if (pick != null)
@@ -271,13 +271,12 @@ public static partial class Body
                 foreach (var kv in _seenAt)
                 {
                     if (kv.Key == pick.Id || now - kv.Value > quiet) continue;
-                    bool inView = false, isPartner = false;
+                    bool inView = false;
                     foreach (var o in vis) if (o.Id == kv.Key) { inView = true; break; }
                     if (inView) continue; // already counted above
                     var pc = GameData.Instance != null ? GameData.Instance.GetPlayerById(kv.Key) : null;
                     if (pc == null || pc.IsDead || pc.Disconnected) continue;
-                    if (partner != null && string.Equals(pc.PlayerName, partner, StringComparison.OrdinalIgnoreCase)) isPartner = true;
-                    if (!isPartner) recent++;
+                    if (!partners.Contains(pc.PlayerName)) recent++;
                 }
                 if (pw + recent > kd.MaxWitnesses) pick = null;
             }

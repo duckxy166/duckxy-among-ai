@@ -10,6 +10,11 @@ const clip = (s, n) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 };
+// Like clip, but keeps line breaks: in the real game each line of a chat message is sent on its own.
+const clipLines = (s, n) => {
+  const t = String(s ?? '').split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+};
 const norm = (s) => String(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}:]/gu, '');
 
 // Models sometimes add spaces, change case or copy the label after the id; accept those.
@@ -136,7 +141,7 @@ export class Agent {
     const others = meeting.alive.filter((n) => n !== this.seat.name);
     this.memory.thought(meeting.t, `meeting ${meeting.n}`, thought);
     return {
-      chat: clip(r.data?.chat_message, 300),
+      chat: clipLines(r.data?.chat_message, 300),
       suspect: matchName(r.data?.suspect, others, ['none']) ?? 'none',
       thought, error: r.error, ms: r.ms, model: r.model,
     };

@@ -147,6 +147,15 @@ public static class Bridge
                     }
                 case "start": Plugin.Logger.LogInfo("[AUB] cmd start"); Runner.Invoke(Game.Start); break;
                 case "abort": Plugin.Logger.LogInfo("[AUB] cmd abort"); Runner.Invoke(Game.Abort); break;
+                case "impostors":
+                    {
+                        if (!root.TryGetProperty("names", out var nv) || nv.ValueKind != JsonValueKind.Array || nv.GetArrayLength() > 3) return Err("impostors needs names (array of up to 3 player names)");
+                        var names = new System.Collections.Generic.List<string>();
+                        foreach (var x in nv.EnumerateArray()) { if (x.ValueKind != JsonValueKind.String) return Err("impostors: names must be strings"); names.Add(x.GetString()); }
+                        Runner.Invoke(() => Game.SetImpostors(names.ToArray()));
+                        break;
+                    }
+                case "pause": { if (!root.TryGetProperty("on", out var pv) || (pv.ValueKind != JsonValueKind.True && pv.ValueKind != JsonValueKind.False)) return Err("pause needs on (bool)"); var on = pv.GetBoolean(); Runner.Invoke(() => Pause.Set(on)); break; }
                 case "label": { if (!root.TryGetProperty("id", out var lv) || lv.ValueKind != JsonValueKind.String) return Err("label needs id (string)"); var id = lv.GetString(); Runner.Invoke(() => Game.Label(id)); break; }
                 case "wait_event": return WaitEvent(root);
                 case "act": { var a = ActArgs.Parse(root); return Runner.Invoke(() => Body.Act(a)); }

@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runBridgeMatch, fitChat } from '../src/bridge/runner.js';
+import { runBridgeMatch, splitChat, freePanel } from '../src/bridge/runner.js';
 import { BridgeClient } from '../src/bridge/client.js';
-import { BridgeSeat, until } from '../src/bridge/seat.js';
+import { BridgeSeat, until, sleep } from '../src/bridge/seat.js';
+import { createFreezer } from '../src/bridge/freeze.js';
 import { roamPrompt } from '../src/agents/prompts.js';
 import { launchArgs } from '../src/bridge/launcher.js';
 import { roomFromBridge, roomToBridge, colorId } from '../src/bridge/skeld.js';
@@ -21,10 +22,33 @@ const CONFIG = {
   bridge: { lobby: { discussion: 0, voting: 5 }, maxMinutes: 1 },
 };
 
-async function play(ship, providers) {
+async function play(ship, providers, lobby = {}, bridge = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'among-ai-bridge-'));
   const clients = new Map(SEATS.map((s, i) => [s.id, new BridgeClient({ id: i + 1, port: ship.ports[i], token: TOKEN })]));
-  return runBridgeMatch({ config: CONFIG, seats: SEATS, providers, clients, matchId: 'test-bridge', dir, memoryDir: path.join(dir, 'memory') });
+  const config = { ...CONFIG, bridge: { ...CONFIG.bridge, ...bridge, lobby: { ...CONFIG.bridge.lobby, ...lobby } } };
+  return runBridgeMatch({ config, seats: SEATS, providers, clients, matchId: 'test-bridge', dir, memoryDir: path.join(dir, 'memory') });
+}
+
+// A brain for the tests below: `pick(context)` chooses the roam action; meetings are quiet skips.
+function brainOf(pick) {
+  return {
+    async complete({ context }) {
+      const out = context.kind === 'roam'
+        ? { secret_thought: 'x', action: pick(context), note: '' }
+        : { secret_thought: 'x', chat_message: '', suspect: 'none', vote: 'skip', lesson: '' };
+      return { text: JSON.stringify(out), refused: false, model: 'script', usage: {} };
+    },
+  };
+}
+
+// The same provider, but slow to make up its mind at the vote.
+function slowVoter(provider, ms) {
+  return {
+    async complete(req) {
+      if (req.context.kind === 'vote') await new Promise((resolve) => setTimeout(resolve, ms));
+      return provider.complete(req);
+    },
+  };
 }
 
 // The impostor (Pink) kills Green at once and kills again right after a meeting; the crew reports and
@@ -79,9 +103,9 @@ test('a scripted round through the bridge: kill, report, chat, vote, crew win', 
     const meeting = of('meeting_start')[0];
     assert.deepEqual([meeting.reason, meeting.body], ['body', 'green']);
 
-    // Chat goes through the game, cut to its 100-character limit.
+    // Chat goes through the game; the crew's long lines go out in two messages under its 100-character limit.
     const sent = ship.ship.calls.filter((c) => c.do === 'chat');
-    assert.equal(sent.length, 3);
+    assert.equal(sent.length, 5);
     assert.ok(sent.every((c) => c.text.length <= 100));
     assert.deepEqual(of('vote').map((v) => `${v.p}>${v.target}`).sort(), ['blue>pink', 'pink>skip', 'red>pink']);
     const result = of('vote_result')[0];
@@ -186,6 +210,256 @@ test('an ejected impostor sabotages as a ghost, and is not asked while it cannot
     assert.equal(ghost[0].reason, 'sabotage_ready');
     assert.ok(ghost[0].legal.every((id) => id.startsWith('wait:') || id.startsWith('sabotage:')));
     assert.deepEqual([r.winner, r.reason], ['impostor', 'ImpostorsByKill']);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('crewmates fixing the reactor together hold different panels', async () => {
+  // Pink sabotages the reactor once; the crew fixes it, then finishes its tasks.
+  const brain = {
+    async complete({ context }) {
+      const { kind, view, role } = context;
+      const can = (id) => view?.legal.some((a) => a.id === id);
+      const task = view?.legal.find((a) => a.id.startsWith('task:'))?.id;
+      let action = 'wait:15';
+      if (role === 'impostor' && can('sabotage:reactor') && !brain.done) { action = 'sabotage:reactor'; brain.done = true; }
+      if (role !== 'impostor') action = can('fix') ? 'fix' : task ?? 'wait:15';
+      const out = kind === 'roam' ? { secret_thought: 'x', action, note: '' } : { secret_thought: 'x', chat_message: '', suspect: 'none', vote: 'skip', lesson: '' };
+      return { text: JSON.stringify(out), refused: false, model: 'script', usage: {} };
+    },
+  };
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, sabotageCooldown: 0 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, brain])));
+    const of = (type) => r.events.filter((e) => e.type === type);
+    const fixes = ship.ship.calls.filter((c) => c.do === 'fix');
+    assert.ok(fixes.length >= 2);
+    assert.deepEqual(fixes.slice(0, 2).map((c) => c.id).sort(), [0, 1]);
+    assert.deepEqual(of('sabotage').map((e) => [e.kind, e.by]), [['reactor', 'pink']]);
+    assert.deepEqual(of('sabotage_fixed').map((e) => e.kind), ['reactor']);
+    assert.deepEqual([r.winner, r.reason], ['crew', 'CrewmatesByTask']);
+    assert.ok(r.agents.get('red').memory.entries.some((e) => e.kind === 'sabotage' && /^Reactor meltdown!/.test(e.text)));
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a crewmate who fixes the reactor again keeps its panel', async () => {
+  // Only Red and Blue fix. The second fix order gets stuck on the way; that seat fixes again and must
+  // not join the other one at its panel, or the reactor melts down.
+  let sabotaged = false;
+  const brain = brainOf(({ view, role, seat }) => {
+    const can = (id) => view.legal.some((a) => a.id === id);
+    const task = view.legal.find((a) => a.id.startsWith('task:'))?.id ?? 'wait:15';
+    if (role === 'impostor') {
+      if (sabotaged || !can('sabotage:reactor')) return 'wait:15';
+      sabotaged = true;
+      return 'sabotage:reactor';
+    }
+    return seat.id !== 'green' && can('fix') ? 'fix' : task;
+  });
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, sabotageCooldown: 0, stuckFix: 2 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, brain])));
+    const fixes = ship.ship.calls.filter((c) => c.do === 'fix');
+    assert.equal(fixes.length, 3);
+    assert.deepEqual([fixes[0].id, fixes[1].id], [0, 1]);
+    assert.deepEqual([fixes[2].who, fixes[2].id], [fixes[1].who, 1]);
+    assert.deepEqual(r.events.filter((e) => e.type === 'sabotage_fixed').map((e) => e.kind), ['reactor']);
+    assert.deepEqual([r.winner, r.reason], ['crew', 'CrewmatesByTask']);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a crewmate who gives up on the reactor frees its panel for the next one', async () => {
+  // Red and Blue fix; the second of them gets stuck and goes back to its tasks. Green, who waited,
+  // then fixes too and must take the panel that was given up, not join the seat still holding.
+  let sabotaged = false;
+  let quitter = null;
+  const brain = brainOf(({ view, role, seat }) => {
+    const can = (id) => view.legal.some((a) => a.id === id);
+    const task = view.legal.find((a) => a.id.startsWith('task:'))?.id ?? 'wait:15';
+    if (role === 'impostor') {
+      if (sabotaged || !can('sabotage:reactor')) return 'wait:15';
+      sabotaged = true;
+      return 'sabotage:reactor';
+    }
+    if (view.reason === 'stuck') quitter = seat.id;
+    if (seat.id === quitter) return task;
+    if (seat.id === 'green') return can('fix') ? (quitter ? 'fix' : 'wait:5') : task;
+    return can('fix') ? 'fix' : task;
+  });
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, sabotageCooldown: 0, stuckFix: 2, reactorMs: 12000 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, brain])));
+    const fixes = ship.ship.calls.filter((c) => c.do === 'fix');
+    const green = fixes.find((c) => c.who === 'Green');
+    assert.ok(green, 'Green never fixed');
+    assert.deepEqual([fixes[0].id, fixes[1].id, green.id], [0, 1, 1]);
+    assert.deepEqual(r.events.filter((e) => e.type === 'sabotage_fixed').map((e) => e.kind), ['reactor']);
+    assert.deepEqual([r.winner, r.reason], ['crew', 'CrewmatesByTask']);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('the reactor panel goes where fewer other living seats are fixing', () => {
+  const seat = (id, plan = null, more = {}) => ({ id, alive: true, plan, ...more });
+  const at = (panel) => ({ kind: 'fix', panel });
+  const me = seat('me', at(1));
+  assert.equal(freePanel(me, [me, seat('a', at(0))]), 1, 'a seat fixing again keeps its own panel');
+  assert.equal(freePanel(me, [me, seat('a', at(0)), seat('b', at(1))]), 1, 'on a tie a seat fixing again stays put');
+  assert.equal(freePanel(seat('x'), [seat('a', at(0)), seat('b', at(1))]), 0);
+  assert.equal(freePanel(seat('x'), [seat('a', at(0)), seat('b', { kind: 'task' })]), 1, 'a seat that gave up frees its panel');
+  assert.equal(freePanel(seat('x'), [seat('a', at(0)), seat('b', at(1), { alive: false })]), 1, 'the dead hold nothing');
+  assert.equal(freePanel(seat('x'), [seat('a', null, { fixing: 0 })]), 1, 'an order on its way takes its panel');
+  assert.equal(freePanel(seat('x'), [seat('a', { kind: 'fix', panel: undefined })]), 0, 'a lights fix holds no panel');
+});
+
+test('a fix order takes its panel while on its way, and a refused order keeps the panel held', async () => {
+  let during = null;
+  const replies = [];
+  const client = {
+    act: async (a) => { if (a.do === 'fix') during = seat.fixing; return replies.shift() ?? { ok: true }; },
+    state: async () => ({ ok: true, stage: 'ingame', game: null }),
+  };
+  const match = {
+    lang: 'en', rules: { followSeconds: 20, emergencyMeetings: 1 }, meeting: null, over: false, knownDead: new Set(),
+    now: () => 30, emit: () => {}, warn: () => {}, fixConsole: () => 1,
+    onBridgeEvent() {}, onKill() {}, onDeath() {}, onSabotage() {}, onSabotageFixed() {}, onTaskDone() {},
+  };
+  const seat = new BridgeSeat({ seat: { id: 'red', name: 'Red' }, client, match });
+  seat.attach({ memory: new EpisodicMemory() });
+  seat.state = { phase: 'tasks', sabotage: { active: 'reactor' } };
+
+  await seat.execute('fix');
+  assert.equal(during, 1);
+  assert.equal(seat.fixing, null);
+  assert.deepEqual([seat.plan.kind, seat.plan.panel], ['fix', 1]);
+  // The copy refuses a meeting during the crisis before it lets go of the panel.
+  replies.push({ ok: false, error: 'emergency meetings cannot be called during a crisis' });
+  await seat.execute('emergency');
+  assert.deepEqual([seat.plan?.kind, seat.plan?.panel], ['fix', 1]);
+  // Any other plan goes when an order is refused.
+  seat.plan = { kind: 'move', moving: true, until: 99 };
+  replies.push({ ok: false, error: 'target not visible' });
+  await seat.execute('follow:Blue');
+  assert.equal(seat.plan, null);
+  seat.stop();
+});
+
+test('with three impostors each one knows both partners and is never offered one to kill', async () => {
+  const IMPS = ['Red', 'Blue', 'Pink'];
+  const views = [];
+  const brain = brainOf(({ view, role, seat }) => {
+    if (role === 'impostor') views.push({ who: seat.name, legal: view.legal.map((a) => a.id) });
+    return role === 'impostor' && view.legal.some((a) => a.id === 'kill:Green') ? 'kill:Green' : 'wait:15';
+  });
+  const ship = await startFakeShip({ names: NAMES, impostor: IMPS, token: TOKEN });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, brain])));
+    assert.equal(r.events.filter((e) => e.type === 'match_error').length, 0);
+    for (const name of IMPS) {
+      const mates = IMPS.filter((n) => n !== name);
+      const agent = r.agents.get(name.toLowerCase());
+      assert.deepEqual(agent.partners, mates);
+      assert.ok(agent.system.includes(`together with ${mates.join(' and ')} (only you impostors know)`), name);
+    }
+    assert.ok(views.length > 0);
+    for (const { who, legal } of views) {
+      for (const mate of IMPS.filter((n) => n !== who)) assert.ok(!legal.includes(`kill:${mate}`), `${who} was offered kill:${mate}`);
+    }
+    assert.deepEqual([r.winner, r.reason], ['impostor', 'ImpostorsByKill']);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('with anonymous votes the meeting record has only how many votes each one got', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, scripted(s, [])])), { anonymousVotes: true });
+    assert.equal(r.winner, 'crew');
+    const record = r.agents.get('red').memory.meetings[0];
+    assert.match(record, /Votes \(anonymous\): Pink ×2, skip ×1/);
+    assert.doesNotMatch(record, /→/);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a vote the game did not take is neither counted nor remembered', async () => {
+  // Blue's copy refuses its vote: Red→Pink against Pink→skip ejects nobody, and play goes on.
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, abstain: ['Blue'] });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, scripted(s, [])])));
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(of('match_error').length, 0);
+    const blue = of('vote').find((v) => v.p === 'blue');
+    assert.equal(blue.cast, false);
+    assert.match(blue.error, /refuses/);
+    assert.ok(of('vote').filter((v) => v.p !== 'blue').every((v) => v.cast === undefined));
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.tally, result.skip, result.ejected], [{ pink: 1 }, 1, null]);
+    assert.match(r.agents.get('red').memory.meetings[0], /Votes: Red→Pink, Blue→\(no vote\), Pink→skip/);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a vote answered "game thread busy" counts once the game has taken it', async () => {
+  // Red's copy is busy when Red votes and casts the vote a moment later. If it was the last vote, the
+  // results screen shows that Red voted; if not, asking again gets "already voted". Either way it counts.
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, busyVote: ['Red'], resultsMs: 1500 });
+  try {
+    const r = await play(ship, new Map(SEATS.map((s) => [s.id, scripted(s, [])])));
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(of('match_error').length, 0);
+    const red = of('vote').find((v) => v.p === 'red');
+    assert.deepEqual([red.cast, red.error], [undefined, undefined]);
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.tally, result.skip, result.ejected], [{ pink: 2 }, 1, 'pink']);
+    assert.match(r.agents.get('red').memory.meetings[0], /Votes: Red→Pink, Blue→Pink, Pink→skip/);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a busy vote that is not the last one counts when asking again gets "already voted"', async () => {
+  // Blue takes a while to vote, so Red's copy is still in voting when Red asks again.
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, busyVote: ['Red'] });
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [])]));
+    providers.set('blue', slowVoter(providers.get('blue'), 1500));
+    const r = await play(ship, providers);
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(ship.ship.calls.filter((c) => c.who === 'Red' && c.do === 'vote').length, 2);
+    assert.equal(of('vote').find((v) => v.p === 'red').cast, undefined);
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.tally, result.skip, result.ejected], [{ pink: 2 }, 1, 'pink']);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('a vote that misses the voting time is not counted', async () => {
+  // Voting closes before Blue makes up its mind; the results screen shows Blue did not vote.
+  // (The runner waits 1.5 s for the meeting screen and a chat round, with the crew's long lines sent in two
+  // messages 1.1 s apart, before anyone votes.)
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 500, votingMs: 5000, resultsMs: 4000 });
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [])]));
+    providers.set('blue', slowVoter(providers.get('blue'), 6000));
+    const r = await play(ship, providers);
+    const of = (type) => r.events.filter((e) => e.type === type);
+    assert.equal(of('match_error').length, 0);
+    const blue = of('vote').find((v) => v.p === 'blue');
+    assert.equal(blue.cast, false);
+    const result = of('vote_result')[0];
+    assert.deepEqual([result.tally, result.skip, result.ejected], [{ pink: 1 }, 1, null]);
+    assert.match(r.agents.get('red').memory.meetings[0], /Votes: Red→Pink, Blue→\(no vote\), Pink→skip/);
   } finally {
     await ship.close();
   }
@@ -398,12 +672,81 @@ test('names, chat length and launch arguments', () => {
   assert.equal(roomToBridge('O2'), 'LifeSupp');
   assert.equal(colorId('pink'), 3);
   const long = `${'word '.repeat(40)}end`;
-  const cut = fitChat(long);
-  assert.ok(cut.length <= 100 && cut.endsWith('…') && !cut.includes('wor…'));
-  assert.equal(fitChat('  short   text '), 'short text');
+  const parts = splitChat(long);
+  assert.ok(parts.length === 3 && parts.every((p) => p.length <= 100 && /^word|end$/.test(p) && !/ $|^ /.test(p)));
+  assert.equal(parts.join(' '), long);
+  assert.deepEqual(splitChat('  short   text '), ['short text']);
+  assert.deepEqual(splitChat(''), []);
+  assert.deepEqual(splitChat("Haiku5 is the killer!!\n trust me bro \n\nnot me, it's HIM"), ['Haiku5 is the killer!!', 'trust me bro', "not me, it's HIM"]);
+  const thai = 'ฉันอยู่ Electrical กับ Haiku1 ตั้งแต่ 00:24 ทำ Divert Power ไม่เคยเห็นศพ Haiku5 บอกเจอฉันอยู่ตรงศพ แต่ฉันไม่ได้ไปที่นั่นเลยสักครั้ง';
+  const th = splitChat(thai);
+  assert.ok(th.length === 2 && th.every((p) => p.length <= 100 && !/^[ัิ-ฺ็-๎]/.test(p)));
+  assert.equal(th.join('').replace(/ /g, ''), thai.replace(/ /g, ''));
+  const word = 'ก'.repeat(99) + 'ี'.repeat(3) + 'ข'.repeat(20); // no word break: a hard cut, never before a mark
+  assert.ok(splitChat(word).every((p) => p.length <= 100 && !/^[ัิ-ฺ็-๎]/.test(p)));
   const args = launchArgs({ id: 2, mode: 'join', name: 'Kimi', color: 'purple', token: TOKEN, port: 47002 });
   assert.ok(args.includes('--aub-mode=join') && args.includes('--aub-color=8') && args.includes('--aub-port=47002'));
+  assert.ok(!args.some((a) => a.startsWith('--aub-window') || a.startsWith('--aub-sound') || a === '-popupwindow'));
+  const rec = launchArgs({ id: 1, mode: 'host', name: 'Kimi', color: 'purple', token: TOKEN, port: 47001, sound: true, window: '1920x1080' });
+  assert.ok(rec.includes('--aub-sound=1') && rec.includes('--aub-window=1920x1080') && rec.includes('-popupwindow'));
+  assert.deepEqual(rec.slice(rec.indexOf('-screen-width'), rec.indexOf('-screen-width') + 6), ['-screen-width', '1920', '-screen-height', '1080', '-screen-fullscreen', '0']);
+  assert.ok(!launchArgs({ id: 1, mode: 'host', name: 'K', color: 'red', token: TOKEN, port: 1, window: 'big' }).includes('-popupwindow'));
   const b64 = args.find((a) => a.startsWith('--aub-nameb64=')).split('=')[1];
   assert.equal(Buffer.from(b64, 'base64').toString('utf8'), 'Kimi');
   assert.throws(() => new BridgeClient({ id: 1, token: 'short' }), /16 or more/);
+});
+
+test('the game stands still while any brain thinks, and resumes when the last one is done', async () => {
+  const sent = [];
+  const fake = (id) => ({ id, request: async (cmd, args) => { sent.push(`${id}:${cmd}:${args.on}`); return { ok: true }; } });
+  const f = createFreezer([fake(1), fake(2)], { keepAliveMs: 60000 });
+  let release;
+  const slow = f.think(() => new Promise((r) => { release = r; }));
+  assert.equal(f.paused, true);
+  const quick = await f.think(async () => 'done');
+  assert.equal(quick, 'done');
+  assert.equal(f.paused, true); // the slow one is still thinking
+  await sleep(30);
+  release('late');
+  assert.equal(await slow, 'late');
+  assert.equal(f.paused, false);
+  assert.ok(f.pausedMs() >= 25);
+  await f.stop();
+  assert.deepEqual(sent, ['1:pause:true', '2:pause:true', '1:pause:false', '2:pause:false']);
+  await f.think(async () => null); // after stop: no more pauses
+  assert.equal(sent.length, 4);
+  const off = createFreezer([fake(3)], { enabled: false });
+  await off.think(async () => null);
+  assert.equal(sent.length, 4);
+});
+
+test('a scripted round pauses every copy around each brain call', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN, votingDelayMs: 2500 });
+  try {
+    const providers = new Map(SEATS.map((s) => [s.id, scripted(s, [])]));
+    const r = await play(ship, providers);
+    assert.equal(r.winner, 'crew');
+    const pauses = ship.ship.calls.filter((c) => c.do === 'pause');
+    assert.ok(pauses.some((c) => c.on) && pauses.some((c) => !c.on));
+    for (const name of NAMES) assert.equal(pauses.filter((c) => c.who === name).at(-1).on, false, `${name} left paused`);
+  } finally {
+    await ship.close();
+  }
+});
+
+test('bridge.impostors deals the impostor to the chosen seat', async () => {
+  const ship = await startFakeShip({ names: NAMES, impostor: 'Pink', token: TOKEN });
+  try {
+    const providers = new Map();
+    for (const s of SEATS) providers.set(s.id, await createProvider(s, { seed: 3 }));
+    const r = await play(ship, providers, {}, { impostors: ['blue'] });
+    assert.deepEqual(ship.ship.forced, ['Blue']);
+    const start = r.events.find((e) => e.type === 'match_start');
+    assert.deepEqual(start.players.filter((p) => p.role === 'impostor').map((p) => p.name), ['Blue']);
+  } finally {
+    await ship.close();
+  }
+  const seats = new Map();
+  await assert.rejects(play({ ports: [] }, seats, {}, { impostors: ['nobody'] }), /no seat nobody/);
+  await assert.rejects(play({ ports: [] }, seats, {}, { impostors: ['red', 'blue'] }), /need 7 or more players/);
 });

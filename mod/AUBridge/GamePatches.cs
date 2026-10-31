@@ -19,6 +19,12 @@ static class PMurder
     [HarmonyPostfix] static void Post(PlayerControl __instance, PlayerControl target) => Hook.Safe("murder", () => Game.OnMurder(__instance, target));
 }
 
+[HarmonyPatch(typeof(RoleManager), nameof(RoleManager.SelectRoles))]
+static class PSelectRoles
+{
+    [HarmonyPrefix] static bool Pre() { bool dealt = false; Hook.Safe("selectRoles", () => dealt = Game.AssignForcedRoles()); return !dealt; }
+}
+
 [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
 static class PStartMeeting
 {

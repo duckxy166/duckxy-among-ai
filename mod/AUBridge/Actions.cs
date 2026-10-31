@@ -62,7 +62,7 @@ public static partial class Body
         foreach (var v in Game.Visible(me, pos, Game.LightRadius(me))) if (string.Equals(v.Name, a.Target, StringComparison.OrdinalIgnoreCase)) { hit = v; break; }
         if (hit == null) throw new BridgeError("target not visible");
         if (!hit.Alive) throw new BridgeError("target is already dead");
-        if (string.Equals(hit.Name, Game.Partner(me), StringComparison.OrdinalIgnoreCase)) throw new BridgeError("cannot kill your partner");
+        if (Game.IsPartner(me, hit.Name)) throw new BridgeError("cannot kill your partner");
         float range = KillRange();
         if (hit.Dist > range) throw new BridgeError($"target out of kill range ({hit.Dist:0.0} > {range:0.0})");
         DoKill(me, hit);
@@ -147,7 +147,7 @@ public static partial class Body
         foreach (var ch in t) if (char.IsControl(ch)) throw new BridgeError("chat text has control characters");
         bool lobby = AmongUsClient.Instance != null && AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Joined;
         if (!lobby && MeetingHud.Instance == null) throw new BridgeError("chat is only available in meetings (after meeting_started) and in the lobby");
-        float now = Events.Now;
+        float now = UnityEngine.Time.realtimeSinceStartup; // the game's own limit, in real time even while paused
         if (now - _lastChatAt < 1.0f) throw new BridgeError("chat too fast (1 message per second)");
         if (!me.RpcSendChat(t)) throw new BridgeError("chat was rejected by the game");
         _lastChatAt = now;

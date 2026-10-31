@@ -14,7 +14,7 @@ const SABOTAGE_SHOWS = 3; // seconds a copy may take to show its own sabotage (s
 const GHOST_NOTES = new Set(['you_died', 'you_sabotaged', 'rejected']);
 
 export class BridgeSeat {
-  // match: { lang, rules, now(), emit(event), meeting, over, onBridgeEvent(seat, e), onKill(seat, victim, room), onSabotage(seat, type), warn(text) }
+  // match: { lang, rules, now(), emit(event), meeting, over, onBridgeEvent(seat, e), onKill(seat, victim, room), onSabotage(seat, type), fixConsole(seat, type), warn(text) }
   constructor({ seat, client, match }) {
     this.seat = seat;
     this.id = seat.id;
@@ -32,6 +32,7 @@ export class BridgeSeat {
     this.needs = null;
     this.waiter = null;
     this.plan = null;
+    this.fixing = null; // the reactor panel of a fix order still on its way to the copy
     this.venting = null; // the in, hop, out steps of a vent plan, while they run
     this.sabotageSentAt = -99;
     this.deciding = false;
@@ -404,10 +405,20 @@ export class BridgeSeat {
         r = await send({ do: 'call_meeting' });
         plan = { kind: 'button', moving: true, until: now + 60 };
         break;
-      case 'fix':
-        r = await send({ do: 'fix', type: this.state?.sabotage?.active });
-        plan = { kind: 'fix', type: this.state?.sabotage?.active, moving: true, until: now + 90 };
+      case 'fix': {
+        // The panel counts as taken while the order is on its way, so a crewmate deciding at the same
+        // moment is sent to the other one.
+        const type = this.state?.sabotage?.active;
+        const panel = this.match.fixConsole(this, type);
+        this.fixing = panel ?? null;
+        try {
+          r = await send({ do: 'fix', type, id: panel });
+        } finally {
+          this.fixing = null;
+        }
+        plan = { kind: 'fix', type, panel, moving: true, until: now + 90 };
         break;
+      }
       case 'report':
         return this.startReport();
       case 'kill':
@@ -433,7 +444,9 @@ export class BridgeSeat {
 
   rejected(action, reason) {
     this.note(this.match.now(), 'rejected', 'rejected', { action, reason: reason ?? '?' });
-    this.plan = null;
+    // The copy refuses an order before it drops the old one, so a body at a sabotage panel stays
+    // there: keep that plan (the panel stays taken), drop any other.
+    if (this.plan?.kind !== 'fix') this.plan = null;
     // A short pause, so a brain that keeps picking an impossible action does not spin.
     setTimeout(() => this.wake('idle'), 1000);
     return { ok: false, error: reason };

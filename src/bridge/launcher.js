@@ -17,20 +17,26 @@ export function makeClients(seats, { token, basePort = 47000 }) {
   return new Map(seats.map((s, i) => [s.id, new BridgeClient({ id: i + 1, port: basePort + i + 1, token })]));
 }
 
-export function launchArgs({ id, mode, name, color, token, port, mute = true }) {
-  return [
+// window: "1920x1080" opens the copy windowed and borderless at that size; sound: a bot copy plays its
+// sound anyway. Both are for recording every copy on its own (studio docs).
+export function launchArgs({ id, mode, name, color, token, port, mute = true, sound = false, window = null }) {
+  const args = [
     `--aub-id=${id}`, `--aub-mode=${mode}`, `--aub-nameb64=${Buffer.from(name, 'utf8').toString('base64')}`,
     `--aub-color=${colorId(color)}`, `--aub-mute=${mute ? 1 : 0}`, `--aub-token=${token}`, `--aub-port=${port}`,
   ];
+  if (sound) args.push('--aub-sound=1');
+  const size = /^(\d+)x(\d+)$/.exec(window ?? '');
+  if (size) args.push(`--aub-window=${window}`, '-screen-width', size[1], '-screen-height', size[2], '-screen-fullscreen', '0', '-popupwindow');
+  return args;
 }
 
-export async function openLobby({ gamePath, seats, token, basePort = 47000, joinDelayMs = 4000, mute = true, log = () => {} }) {
+export async function openLobby({ gamePath, seats, token, basePort = 47000, joinDelayMs = 4000, mute = true, sound = false, window = null, log = () => {} }) {
   if (!gamePath || !fs.existsSync(gamePath)) throw new Error(`Among Us.exe not found: ${gamePath || '(bridge.gamePath is empty)'}`);
   const clients = makeClients(seats, { token, basePort });
   const procs = [];
   const open = (i, mode) => {
     const s = seats[i];
-    const args = launchArgs({ id: i + 1, mode, name: s.name, color: s.color, token, port: basePort + i + 1, mute });
+    const args = launchArgs({ id: i + 1, mode, name: s.name, color: s.color, token, port: basePort + i + 1, mute, sound, window });
     procs.push(spawn(gamePath, args, { cwd: path.dirname(gamePath), stdio: 'ignore' }));
   };
   const close = () => { for (const p of procs) { try { p.kill(); } catch { /* already gone */ } } };

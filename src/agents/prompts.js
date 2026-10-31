@@ -4,7 +4,7 @@
 import { clock } from '../i18n.js';
 
 const LANGUAGE = {
-  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord. Keep game words in English (vent, sus, impostor, task, Electrical...)',
+  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "เห้ย อย่าโหวตผมดิ", "อ้าวเฮ้ย ใครตายอะ". Keep game words in English (vent, sus, impostor, task, Electrical...)',
   en: 'English: casual, like friends on voice chat',
 };
 
@@ -68,14 +68,13 @@ export function roamSchema(legalIds) {
   };
 }
 
-// realGame: the players are in the real Among Us (src/bridge), where time does not stop and the chat
-// has a 100-character limit.
+// realGame: the players are in the real Among Us (src/bridge), where time does not stop.
 export function systemPrompt({ me, role, partners, roster, rules, impostorCount, language, persona, longTerm, revealModels, realGame = false }) {
   const players = roster
     .map((s) => `- ${s.name} (${s.color}${revealModels && s.label ? `, played by ${s.label}` : ''})${s.id === me.id ? '  <- you' : ''}`)
     .join('\n');
   const roleText = role === 'impostor'
-    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you two know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, use vents, sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill or a vent can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
+    ? `IMPOSTOR${partners.length ? ` together with ${partners.join(' and ')} (only you ${partners.length === 1 ? 'two' : 'impostors'} know)` : ''}. You win when Impostors are as many as the living crewmates, or when a ${realGame ? 'reactor or O2 sabotage' : 'reactor meltdown'} is not fixed in time. Kill when nobody is watching, use vents, sabotage, pretend to do tasks (you cannot do real ones) and lie at meetings. Anyone who sees a kill or a vent can expose you. Crewmates also win by finishing their tasks, so keep the pressure on.`
     : `CREWMATE. You win when every task is done or every Impostor is voted out. ${impostorCount} Impostor${impostorCount > 1 ? 's are' : ' is'} hiding among the players. Do your tasks, watch who goes where, and catch the liars.`;
 
   return `You are ${me.name}, a player in AMONG AI: an Among Us-style social deduction match where every player is a different AI model. Play to win and stay in character for the whole match.
@@ -99,10 +98,10 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 TWO VOICES: every reply has both
 1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
 2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is 1-2 short sentences${realGame ? ' and at most 100 characters (the game cuts the rest)' : ''}, like a real player on voice chat: no lists, no markdown, no stage directions, and never mention your secret thoughts.
+Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a real player types in the game chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
-Claims about where you were, who you saw and when must come from your memory log, with the times. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
+Claims about where you were, who you saw and when must come from your memory log. Say the exact time only when it nails someone; otherwise talk like a player ("just now", "when the lights went out"). If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
 
 LANGUAGE: write secret_thought, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
 ${persona ? `\nYOUR PERSONALITY: ${persona}\n` : ''}${longTerm ? `\nYOUR MEMORY FROM PAST MATCHES (only you can read this):\n${longTerm}\n` : ''}
@@ -141,7 +140,7 @@ export function roamPrompt(view, memory) {
     out.push(`Your tasks: ${view.tasks.map((t) => `${t.done ? '[done]' : '[todo]'} ${t.name} @ ${t.room}`).join('; ')}.`);
     out.push(`Crew task bar: ${view.taskBar.done}/${view.taskBar.total}.`);
   } else {
-    if (view.partners.length) out.push(`Your partner: ${view.partners.join(', ')}.`);
+    if (view.partners.length) out.push(`Your partner${view.partners.length > 1 ? 's' : ''}: ${view.partners.join(', ')}.`);
     out.push(`Kill cooldown: ${view.killCooldown > 0 ? `${view.killCooldown}s` : 'READY'}. Sabotage: ${view.sabotageCooldown > 0 ? `${view.sabotageCooldown}s` : 'ready'}.${view.vents.length ? ` Vents here lead to: ${view.vents.join(', ')}.` : ''}`);
     out.push(`Cover tasks you can pretend to do: ${view.tasks.filter((t) => !t.done).map((t) => `${t.name} @ ${t.room}`).join('; ') || 'none left'}.`);
     out.push(`Crew task bar: ${view.taskBar.done}/${view.taskBar.total}.`);
