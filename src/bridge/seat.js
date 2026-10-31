@@ -14,7 +14,7 @@ const SABOTAGE_SHOWS = 3; // seconds a copy may take to show its own sabotage (s
 const GHOST_NOTES = new Set(['you_died', 'you_sabotaged', 'rejected']);
 
 export class BridgeSeat {
-  // match: { lang, rules, now(), emit(event), meeting, over, onBridgeEvent(seat, e), onKill(seat, victim, room), onSabotage(seat, type), fixConsole(seat, type), warn(text) }
+  // match: { lang, rules, now(), emit(event), warn(text), meeting, over, ledger (MatchLedger), onBridgeEvent(seat, e) }
   constructor({ seat, client, match }) {
     this.seat = seat;
     this.id = seat.id;
@@ -24,15 +24,13 @@ export class BridgeSeat {
     this.agent = null;
     this.role = null; // 'crew' | 'impostor', as in the simulator
     this.partners = [];
-    this.alive = true;
     this.state = null; // the `game` part of the last `state` reply
     this.room = 'Cafeteria';
     this.seen = new Set(); // names in view, from saw_player / lost_player
     this.seq = 0;
     this.needs = null;
     this.waiter = null;
-    this.plan = null;
-    this.fixing = null; // the reactor panel of a fix order still on its way to the copy
+    this._plan = null;
     this.venting = null; // the in, hop, out steps of a vent plan, while they run
     this.sabotageSentAt = -99;
     this.deciding = false;
@@ -46,6 +44,17 @@ export class BridgeSeat {
 
   // ------------------------------------------------------------------ plumbing
 
+  // The ledger's: the killer's copy or the vote can report this seat dead before its own copy does.
+  get alive() { return this.match.ledger.alive(this.id); }
+
+  // A fix plan holds a reactor panel in the ledger. Any other plan lets go of it, as every new body
+  // order does in the mod (Body.Stop releases the console).
+  get plan() { return this._plan; }
+  set plan(p) {
+    if (this._plan?.kind === 'fix' && p?.kind !== 'fix') this.match.ledger.releasePanel(this.id);
+    this._plan = p;
+  }
+
   attach(agent) {
     this.agent = agent;
     for (const b of this.buffered) this.write(b);
@@ -58,7 +67,7 @@ export class BridgeSeat {
     this.state = r.game ?? null;
     const me = this.state?.me;
     if (me) {
-      this.alive = me.alive !== false;
+      if (me.alive === false) this.match.ledger.died(this.id);
       this.room = roomFromBridge(me.room) ?? this.room;
     }
     return this.state;
@@ -200,7 +209,6 @@ export class BridgeSeat {
         const done = tasks.filter((x) => x.done || x.id === e.id).length;
         this.note(t, 'task_done', 'task_done', { task: taskName(e.name), room: this.where(roomFromBridge(task?.room) ?? this.room), done, total: tasks.length });
         this.match.emit({ type: 'task_done', t: this.match.now(), p: this.id, task: taskName(e.name), room: this.room, ghost: !this.alive });
-        this.match.onTaskDone(this);
         if (plan?.kind === 'task') this.endPlan(plan);
         break;
       }
@@ -221,17 +229,16 @@ export class BridgeSeat {
         this.note(t, 'you_killed', 'you_killed', {
           victim: e.victim, room: this.where(room), witnesses: witnesses.join(', ') || say(this.match.lang, 'nobody'),
         });
-        this.match.onKill(this, e.victim, room ?? this.room);
+        this.match.ledger.killed(this.id, e.victim, room ?? this.room);
         this.endPlan(plan);
         break;
       }
       case 'you_died':
         if (e.cause !== 'killed') break; // ejections are written by the meeting
         this.note(t, 'you_died', e.killer ? 'you_died' : 'you_died_unseen', { killer: e.killer, room: this.where(this.room) });
-        this.alive = false;
+        this.match.ledger.died(this.id);
         this.plan = null;
         this.needs = null;
-        this.match.onDeath(this);
         break;
       case 'sabotage': {
         const secs = Math.round(this.state?.sabotage?.timer ?? 30);
@@ -241,7 +248,7 @@ export class BridgeSeat {
       }
       case 'sabotage_fixed':
         this.note(t, 'sabotage', `fixed_${e.kind}`);
-        this.match.onSabotageFixed(e.kind);
+        this.match.ledger.fixed(e.kind);
         if (plan?.kind === 'fix') this.endPlan(plan);
         break;
       case 'fix_finished':
@@ -290,7 +297,7 @@ export class BridgeSeat {
       killCooldown: Math.ceil(me.killCooldown ?? 0),
       sabotageCooldown: Math.ceil(st.sabotage?.cooldown ?? 0),
       vents: this.ventRoutes().map((r) => r.room),
-      knownDead: [...this.match.knownDead],
+      knownDead: this.match.ledger.knownDead(),
       emergencies: this.emergencies,
       legal: this.legalActions(),
     };
@@ -374,10 +381,13 @@ export class BridgeSeat {
     let r;
     let plan = null;
     // The job the body is already doing (asked again after a wake-up, e.g. someone spoke): carry on.
-    // Sending it again would make the copy restart the walk and the wait for that task or panel.
+    // Sending it again would make the copy restart the walk and the wait for that task or panel. A
+    // fixer the ledger moves to the other reactor panel (its own is covered, the other is empty) is
+    // sent there.
     const p = this.plan;
     const same = p && ((p.kind === 'task' && (verb === 'task' || verb === 'fake') && p.task === arg)
-      || (p.kind === 'fix' && verb === 'fix' && p.type === this.state?.sabotage?.active));
+      || (p.kind === 'fix' && verb === 'fix' && p.type === this.state?.sabotage?.active
+        && p.panel === this.match.ledger.reactorPanel(this.id, p.type)));
     if (same) {
       p.stale = false;
       return { ok: true };
@@ -406,15 +416,14 @@ export class BridgeSeat {
         plan = { kind: 'button', moving: true, until: now + 60 };
         break;
       case 'fix': {
-        // The panel counts as taken while the order is on its way, so a crewmate deciding at the same
-        // moment is sent to the other one.
+        // The ledger holds the panel from now on, so a crewmate deciding while this order is on its
+        // way is sent to the other one.
         const type = this.state?.sabotage?.active;
-        const panel = this.match.fixConsole(this, type);
-        this.fixing = panel ?? null;
+        const panel = this.match.ledger.reactorPanel(this.id, type);
         try {
           r = await send({ do: 'fix', type, id: panel });
         } finally {
-          this.fixing = null;
+          if (!r?.ok) this.match.ledger.releasePanel(this.id); // no fix plan ever held it
         }
         plan = { kind: 'fix', type, panel, moving: true, until: now + 90 };
         break;
@@ -430,7 +439,7 @@ export class BridgeSeat {
         if (r.ok) {
           this.sabotageSentAt = now;
           this.note(now, 'you_sabotaged', 'you_sabotaged', { kind: arg });
-          this.match.onSabotage(this, arg);
+          this.match.ledger.sabotaged(this.id, arg);
           this.wake('idle');
         }
         break;

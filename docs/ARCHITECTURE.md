@@ -105,6 +105,12 @@ goes into every player's memory.
 - **Real time** (`runner.js`): nothing waits for a model. A seat decides when something wakes it (start,
   arrived, task done, saw a body or a kill, lost sight, a timer, the meeting ended); its body keeps doing
   the last action meanwhile. A plan that ends while a new decision is under way wakes nobody.
+- **The ledger** (`ledger.js`, `MatchLedger`): what the runner pieces together from every copy. Who is
+  alive (any copy may report a death first), who is known dead after a meeting, where bodies fell, who
+  had the killer in view, the active sabotage, and which reactor panel each fixing seat holds: the panel
+  fewer living others hold, kept while that seat's plan is `fix` unless the other panel has fewer
+  holders (moving then never leaves a panel empty). It writes `kill`, `sabotage` and
+  `sabotage_fixed`. A seat reads only known dead, its own liveness and its own panel from it.
 - **Meetings**: the seats speak in turns through the game chat (100 characters, cut at a word), then each
   waits until its own copy opens voting and votes. The game decides the result; the runner writes the
   same `vote_result` and public meeting record as the simulator.
@@ -156,7 +162,7 @@ build on top (stats, highlight finders, your own overlay).
 | `src/agents/` | Agent, memory, prompts and output schemas |
 | `src/providers/` | Anthropic, OpenAI-compatible, subscription CLI (`cli.js`) and mock brains |
 | `src/match/runner.js` | Runs a match and writes the event log |
-| `src/bridge/` | The real game through AUBridge: client, seat, real-time runner, launcher, Skeld names |
+| `src/bridge/` | The real game through AUBridge: client, seat, match ledger, real-time runner, launcher, Skeld names |
 | `src/server/server.js` | Viewer server: static files, live SSE, saved matches (`webRoot` swaps the page) |
 | `src/index.js` | Library entry point (`import { runMatch } from 'duckxy-among-ai'`) |
 | `web/` | The viewer (plain HTML/CSS/JS, no build step) |

@@ -168,16 +168,26 @@ what the game allows (2 from 7 players).
 
 Tests: `test/bridge.test.js` runs the runner against `test/fake-bridge.js`, a small fake of the mod (same
 protocol, events and state fields): a scripted kill → report → chat → vote → crew win, a meeting that
-ejects nobody followed by more play, an ejected impostor sabotaging as a ghost, a whole game with the
-mock brains, a vent trip, and the seat's event and action mapping.
+ejects nobody followed by more play, a reactor fixed with both panels, an ejected impostor sabotaging as
+a ghost, a whole game with the mock brains, a vent trip, and the seat's event and action mapping and
+panel holding. `test/ledger.test.js` checks `MatchLedger` with plain calls.
 
-Live runs on the itch build, 4 copies, mock brains (`--mock`, lab config with kill cooldown 10 s):
+Live runs on the itch build, 4 copies, lab config with kill cooldown 10 s. Runs 1–3 use the mock brains
+(`--mock`); runs 4–5 use scripted brains: the impostor sabotages the reactor once, crewmates fix it,
+then do tasks or report.
 
 | Run | What happened | Checks |
 |---|---|---|
 | 1 (09:23) | Pink (impostor) sabotaged at 68 s, killed Blue at 92 s and reported; Red was voted out (not the impostor); impostors win by vote at 127 s | no crash, no rejected action, no warning; 38 decisions; Thai chat sent without errors |
 | 2 (09:31), after the review fixes | Red (impostor) killed Green alone in Cafeteria at 13 s and reported; everyone skipped; play went on; Red killed Blue in Storage; impostors win by kill at 99 s | the log reads `vote_result → meeting_end → kill → game_over`; all 3 living seats decided again with reason `meeting_over`; each copy voted only after its own voting opened (meeting at 15 s, discussion 40 s, votes at 61 s); no seat decided twice within 0.5 s; no rejected action |
 | 3 (09:39), mod built from `mod/AUBridge` | Green (impostor) sabotaged the reactor at 16 s; all three crewmates chose `fix` and reached Reactor 20 s before the deadline, but all three held console 1 and nobody held console 0; impostors win by sabotage at 47 s | the mod's match log and nav cache now land in `BepInEx/AUBridge/games/`; found two bridge bugs, fixed after this run: the sabotage type was read from `type` (the mod sends it as `kind`), and memory lines used the mod's `t`, which starts about 9 s before the match clock |
+| 4 (09:48), panels handed out by a counter | Blue (impostor) sabotaged the reactor at 10.4 s; Red, Pink and Green chose `fix` at 10.4–10.5 s; fixed at 23.6 s. Blue killed Pink at 58 s, Green reported, everyone skipped; crew win by tasks at 165 s | BepInEx logs: the three crewmates held consoles 0, 0 and 1. The counter gave a seat a new panel every time it asked, so a seat that chose `fix` again could leave a panel empty; replaced by `MatchLedger` before run 5 |
+| 5 (10:43), panels from `MatchLedger` | Pink (impostor) sabotaged the reactor at 10.3 s; Red, Green and Blue chose `fix` at 10.4–10.5 s and were sent panels 0, 1 and 0; fixed at 29.2 s. Pink killed Red in Storage at 74 s (Blue in view), nobody reported; crew win by tasks at 128 s | BepInEx logs: Red held console 0 and Green console 1; the reactor was fixed before Blue reached its console. No match error, no warning. The game had the lab build of the mod from the vents work (10:18), not the build used in runs 3–4 |
+
+Fixed after run 3: reactor fixes are spread out. `MatchLedger` (`src/bridge/ledger.js`) sends each
+crewmate that chooses `fix` to the panel fewer living others hold, with `fix {type, id}`. A seat that
+chooses `fix` again keeps its panel unless the other one has fewer holders (then its own stays covered
+and the empty one needs it), and lets go of it on any other order, as the mod's body does.
 
 Review fixes found before run 2 (all covered by `test/bridge.test.js` now):
 
@@ -219,9 +229,6 @@ brains, `["h3"]`: the host logged "roles dealt: impostors Haiku3" and Haiku3's c
 
 Still open:
 
-- Reactor fixes are not spread out. `act fix` without an `id` sends each crewmate to its nearest console,
-  so crewmates who start fixing at once from the same side all hold the same one (run 3). The mod accepts
-  `fix {type, id}`; the runner should hand out consoles 0 and 1 in turn.
 - Real models: real time means slow models leave their player idle. Not measured yet.
 - 8 copies at once: 7 work (above), 8 would need roughly another 750 MB.
 - The mock brains rarely eject anybody in the real game, so a ghost impostor shows up only in the scripted

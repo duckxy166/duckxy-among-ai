@@ -11,7 +11,7 @@ in this repository. When production needs something, add an event field, an expo
 ## Checks
 
 ```bash
-npm test                            # node --test: engine, memory, full mock matches, bridge vs a fake AUBridge
+npm test                            # node --test: engine, memory, full mock matches, match ledger, bridge vs a fake AUBridge
 node src/cli.js run --mock          # a full match without API keys
 node src/cli.js replay              # then open http://localhost:7777 to look at the viewer
 ```
@@ -33,6 +33,11 @@ node src/cli.js replay              # then open http://localhost:7777 to look at
   its own game copy (`state` and events of that copy). It is real time, so it is not deterministic; the
   seed only replays simulator matches. `test/fake-bridge.js` stands in for the mod in tests: when you
   change what the bridge expects from AUBridge, change the fake the same way.
+- **The ledger stays on the runner's side.** Facts pieced together from several copies live in
+  `MatchLedger` (`src/bridge/ledger.js`, see CONTEXT.md). A seat may read from it only public facts
+  (known dead), its own liveness and its own reactor panel; witnesses, body rooms and other seats'
+  liveness go only to the event log. The seat tests in `test/bridge.test.js` check that a seat's view
+  has the simulator's fields plus `dead` (its own liveness) and nothing more.
 - **Credit.** Keep the copyright line in `LICENSE`, the Credit section of the README and the credit in
   the viewer footer. `mod/AUBridge` is upstream code (MIT, © Tartaluga): keep `mod/LICENSE`, the credit
   in `mod/README.md` and the README's Acknowledgements, and add every change you make to the mod to the

@@ -14,6 +14,8 @@ const VENTS = [
   { id: 3, room: 'Electrical', to: [6] }, { id: 6, room: 'MedBay', to: [3] },
 ];
 const ventExits = (v) => v.to.map((id) => ({ id, room: VENTS.find((x) => x.id === id).room }));
+// Orders that move the body; like the mod's Body.Stop(), each one lets go of a held reactor panel.
+const BODY_ORDERS = new Set(['stay', 'move_to', 'do_task', 'follow', 'call_meeting', 'fix']);
 
 // impostor: one name or a list. sabotageCooldown: what `state` reports while no sabotage is on (99
 // keeps the mock brains from sabotaging, 0 lets the impostor sabotage at once); a reactor sabotage is
@@ -118,7 +120,10 @@ export async function startFakeShip({
     // Like the mod: the results screen first, then meeting_ended (and the game's end, if this vote ends it).
     setTimeout(() => {
       all('meeting_ended', { ejected: out?.name ?? null, tie, ...(out ? { wasImpostor: isImp(out) } : {}) });
-      if (out) out.alive = false;
+      if (out) {
+        out.alive = false;
+        ship.sab?.held.delete(out.name); // the dead hold no reactor panel
+      }
       checkWin();
       if (ship.over) return;
       ship.phase = 'tasks';
@@ -132,6 +137,7 @@ export async function startFakeShip({
     const ok = () => ({ ok: true, accepted: a.do });
     const err = (error) => ({ ok: false, error });
     ship.calls.push({ who: p.name, ...a });
+    if (BODY_ORDERS.has(a.do)) ship.sab?.held.delete(p.name);
     switch (a.do) {
       case 'stay':
         return ok();
@@ -162,6 +168,7 @@ export async function startFakeShip({
         const v = near(p).find((o) => o.name === a.target);
         if (!v) return err('target not visible');
         v.alive = false;
+        ship.sab?.held.delete(v.name); // the dead hold no reactor panel
         ship.bodies.push({ name: v.name, room: p.room });
         push(p, 'kill_done', { victim: v.name, room: p.room });
         push(v, 'you_died', { cause: 'killed', killer: p.name });
