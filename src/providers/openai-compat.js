@@ -22,6 +22,10 @@ export async function createOpenAICompat(seat, preset) {
         ...(seat.extra ?? {}),
       };
       if (preset.jsonMode === 'json_schema') {
+        // Strict json_schema enforces `enum`, so on a roam turn the per-turn action enum (built in
+        // agent.js) is honored and the model cannot return an off-list action. json_object and none
+        // do not enforce it, but still receive the schema (with the enum) in the prompt text above;
+        // agent.js's matchAction is the fallback for those. We forward the schema unchanged.
         body.response_format = { type: 'json_schema', json_schema: { name: schemaName, schema, strict: true } };
       } else if (preset.jsonMode === 'json_object') {
         body.response_format = { type: 'json_object' };
