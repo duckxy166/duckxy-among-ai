@@ -164,7 +164,7 @@ export function speakPrompt(m, memory, transcript, round, rounds, myName, replyT
 CHAT SO FAR:
 ${chatLog(transcript, myName)}
 
-Round ${round} of ${rounds}. ${turn} Do not repeat yourself: if you gave your alibi already, add something new or react to the last message.
+Round ${round} of ${rounds}. ${turn} Do not repeat yourself: if you gave your alibi already, add something new or react to the last message. No clock times in chat_message (never "00:32" or "ตอน 00:32"): the times in your log are only for you, so say "just now", "right before the body", "at the start".
 
 Reply as JSON: {"secret_thought": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
 }
