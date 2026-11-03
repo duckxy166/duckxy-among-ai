@@ -80,8 +80,8 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 - Dead players never speak again.
 
 TWO VOICES: every reply has both
-1. to_camera: what you tell the camera in a reality-show confessional, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
-2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
+1. to_camera: your confessional to the show's camera, like a reality-show contestant: what your character believes, who they suspect and what they plan to say next. The other characters never see it; the viewers do.
+2. The public part (action, say, chat_message, vote): what the other characters see and hear. An impostor bluffs here, and a crewmate may too.
 Keep to_camera to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a crewmate in danger types in the ship's meeting chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention what you tell the camera. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
