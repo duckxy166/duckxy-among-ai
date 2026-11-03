@@ -126,10 +126,11 @@ export class Agent {
     return { action, raw: r.data?.action ?? null, thought, say: said, note, error: r.error, ms: r.ms, model: r.model };
   }
 
-  async speak(meeting, transcript, round, rounds) {
-    const r = await this.ask('speak', speakPrompt(meeting, this.memory, transcript, round, rounds, this.seat.name),
+  // replyTo: the name of the player who just accused this one, who answers out of turn.
+  async speak(meeting, transcript, round, rounds, replyTo = null) {
+    const r = await this.ask('speak', speakPrompt(meeting, this.memory, transcript, round, rounds, this.seat.name, replyTo),
       this.seat.meetingEffort ?? this.seat.effort,
-      { meeting, transcript, round, evidence: this.memory.evidence() });
+      { meeting, transcript, round, replyTo, evidence: this.memory.evidence() });
     const thought = clip(r.data?.secret_thought, 500);
     const others = meeting.alive.filter((n) => n !== this.seat.name);
     this.memory.thought(meeting.t, `meeting ${meeting.n}`, thought);

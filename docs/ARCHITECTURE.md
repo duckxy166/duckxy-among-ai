@@ -142,7 +142,7 @@ build on top (stats, highlight finders, your own overlay).
 | `kill` / `vent` | killer, victim, room, witnesses · p, from, to |
 | `sabotage` / `sabotage_fixed` | kind, by, deadline · kind, by |
 | `memory` | p, kind, text: one line of one player's memory |
-| `meeting_start` / `chat` / `vote` / `vote_result` / `meeting_end` | n, caller, body · p, round, text, thought, suspect · p, target, thought · ejected, tally, wasImpostor |
+| `meeting_start` / `chat` / `vote` / `vote_result` / `meeting_end` | n, caller, body · p, round, text, thought, suspect, replyTo (the accuser it answers out of turn, or null) · p, target, thought · ejected, tally, wasImpostor |
 | `game_over` / `reflection` / `match_error` | winner, reason, roles · p, lesson · error |
 | `freeze` (real game) | on: the game stands still while brains think / moves again; wall: `Date.now()` at that moment. `match_start` there also has wall |
 | `stats` (always last) | seats: per seat calls, errors, invalid, refusals, ms, input/output/cached tokens |

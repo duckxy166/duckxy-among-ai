@@ -104,8 +104,11 @@ test('a scripted round through the bridge: kill, report, chat, vote, crew win', 
     assert.deepEqual([meeting.reason, meeting.body], ['body', 'green']);
 
     // Chat goes through the game; the crew's long lines go out in two messages under its 100-character limit.
+    // Blue reports and names Pink, who is up next anyway; Red names Pink again, and Pink, having spoken,
+    // answers Red right away with one extra line.
     const sent = ship.ship.calls.filter((c) => c.do === 'chat');
-    assert.equal(sent.length, 5);
+    assert.equal(sent.length, 6);
+    assert.deepEqual(of('chat').map((c) => `${c.p}${c.replyTo ? `<${c.replyTo}` : ''}`), ['blue', 'pink', 'red', 'pink<red']);
     assert.ok(sent.every((c) => c.text.length <= 100));
     assert.deepEqual(of('vote').map((v) => `${v.p}>${v.target}`).sort(), ['blue>pink', 'pink>skip', 'red>pink']);
     const result = of('vote_result')[0];

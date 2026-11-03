@@ -11,6 +11,7 @@ import { systemPrompt } from '../agents/prompts.js';
 import { loadLongTerm, appendLongTerm } from '../agents/memory.js';
 import { createRng } from '../rng.js';
 import { clock } from '../i18n.js';
+import { meetingTurns } from './turns.js';
 
 const quote = (s, n = 160) => (s ? `"${s.length > n ? `${s.slice(0, n - 1)}…` : s}"` : '(quiet)');
 // Decision rounds at one game second. Players woken by an action in a round (a kill or vent they
@@ -85,13 +86,14 @@ export async function runMatch({ config, seats, providers, matchId, dir, memoryD
     const first = Math.max(0, alive.findIndex((p) => p.id === m.caller));
     const order = [...alive.slice(first), ...alive.slice(0, first)];
     const transcript = [];
-    for (let round = 1; round <= config.discussionRounds; round++) {
-      for (const p of order) {
-        emit({ type: 'thinking', t: game.t, players: [p.id] });
-        const r = await agents.get(p.id).speak(info, transcript, round, config.discussionRounds);
-        transcript.push({ name: p.name, text: r.chat });
-        emit({ type: 'chat', t: game.t, p: p.id, round, text: r.chat, thought: r.thought, suspect: r.suspect, error: r.error, ms: r.ms, model: r.model });
-      }
+    const turns = meetingTurns(order, config.discussionRounds);
+    for (let turn = turns.next(); turn; turn = turns.next()) {
+      const { seat: p, round, replyTo } = turn;
+      emit({ type: 'thinking', t: game.t, players: [p.id] });
+      const r = await agents.get(p.id).speak(info, transcript, round, config.discussionRounds, replyTo?.name ?? null);
+      transcript.push({ name: p.name, text: r.chat });
+      emit({ type: 'chat', t: game.t, p: p.id, round, text: r.chat, thought: r.thought, suspect: r.suspect, replyTo: replyTo?.id ?? null, error: r.error, ms: r.ms, model: r.model });
+      turns.heard(p, r.chat, alive.find((o) => o.name === r.suspect) ?? null);
     }
     const options = alive.map((p) => p.name);
     emit({ type: 'thinking', t: game.t, players: alive.map((p) => p.id), voting: true });

@@ -4,8 +4,8 @@
 import { clock } from '../i18n.js';
 
 const LANGUAGE = {
-  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "เห้ย อย่าโหวตผมดิ", "อ้าวเฮ้ย ใครตายอะ". Keep game words in English (vent, sus, impostor, task, Electrical...)',
-  en: 'English: casual, like friends on voice chat',
+  th: 'Thai (ภาษาไทย), in character: you are a crewmate aboard this spaceship, not someone playing a game. People are really dying, a killer is among you, and you talk the way a scared, angry or scheming crewmate would on the ship\'s comms, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมซ่อมสายไฟอยู่จริงๆ". Never mention games, players, Discord or winning. Vary how messages start: nobody opens every line with "เห้ย" or "เดี๋ยว". Keep the ship\'s words in English (vent, sus, impostor, task, Electrical...)',
+  en: 'English, in character: you are a crewmate aboard this spaceship, not someone playing a game. People are really dying and a killer is among you; talk like a scared, angry or scheming crewmate on the ship\'s comms. Never mention games, players or winning.',
 };
 
 const obj = (properties) => ({
@@ -72,17 +72,17 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 - You only know what YOU saw. Your memory log is your evidence and nobody else can read it.
 - You see players in your room and in the corridor you walk. When the lights are out, crewmates only see shadows in their own room.
 - Visual tasks (Submit Scan, Clear Asteroids, Empty Garbage, Prime Shields) play an animation: watching one proves that player is a crewmate. An Impostor can stand at a task, but no animation plays.`}
-- TALKING ON THE SHIP: outside meetings you can speak with "say". Only the players who ${realGame ? 'have you on their screen' : 'can see you'} at that moment hear it${realGame ? ', like proximity voice chat (the game itself shows nothing)' : ' (in the dark, crewmates hear a voice from a shadow and cannot tell whose)'}. Your memory log tells you who heard you, and when someone you named was out of earshot. To talk to someone who is not here, walk to where your log last saw them, or follow them, and speak when you see them. Talk like a real player: split up the work ("I'll fix lights, you keep doing tasks"), ask where someone is going, check an alibi, call out what you saw, answer when someone talks to you, or lie. Stay silent most of the time and talk when it matters. Everything said is remembered and can be quoted at a meeting.
+- TALKING ON THE SHIP: outside meetings you can speak with "say". Only the players who ${realGame ? 'have you on their screen' : 'can see you'} at that moment hear it${realGame ? ', like proximity voice chat (the game itself shows nothing)' : ' (in the dark, crewmates hear a voice from a shadow and cannot tell whose)'}. Your memory log tells you who heard you, and when someone you named was out of earshot. To talk to someone who is not here, walk to where your log last saw them, or follow them, and speak when you see them. Talk like a crewmate who knows a killer is aboard: split up the work ("I'll fix lights, you keep doing tasks"), ask where someone is going, check an alibi, call out what you saw, answer when someone talks to you, or lie. Stay silent most of the time and talk when it matters. Do not narrate your own route or task ("I'm going to Admin to do Swipe Card"): nobody needs it, and it is the same every time. Everything said is remembered and can be quoted at a meeting.
 - Report a body you can see, or press the emergency button in Cafeteria (${rules.emergenciesPerPlayer} per player). At a meeting everyone learns who is dead, discusses, then votes a player out or skips. The most votes ejects; a tie or a skip majority ejects nobody.${rules.confirmEjects ? ' The game reveals whether the ejected player was an Impostor.' : ''}
 - Dead players never speak again.
 
 TWO VOICES: every reply has both
 1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
 2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a real player types in the game chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
+Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a crewmate in danger types in the ship's meeting chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
-Claims about where you were, who you saw and when must come from your memory log. Say the exact time only when it nails someone; otherwise talk like a player ("just now", "when the lights went out"). If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
+Claims about where you were, who you saw and when must come from your memory log. The [mm:ss] times in your log are for you only: players have no clock on screen and never quote one ("00:13"). Say when like a player ("just now", "right at the start", "before the lights went out", "after the last meeting") and name the room and who was there. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
 
 LANGUAGE: write secret_thought, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
 ${persona ? `\nYOUR PERSONALITY: ${persona}\n` : ''}${longTerm ? `\nYOUR MEMORY FROM PAST MATCHES (only you can read this):\n${longTerm}\n` : ''}
@@ -131,6 +131,7 @@ export function roamPrompt(view, memory) {
   out.push(`\nYOUR NOTES TO SELF:\n${memory.renderNotes()}`);
   out.push(`\nYOUR RECENT SECRET THOUGHTS:\n${memory.renderThoughts(3)}`);
   out.push(`\nACTIONS (pick one and copy its id exactly):\n${view.legal.map((a) => `- ${a.id}  (${a.label})`).join('\n')}`);
+  out.push('\nsay: usually empty. When you do speak, react to someone here or to what you just saw; no clock times ("00:32"), and no announcing your next task.');
   out.push('\nReply as JSON: {"secret_thought": "...", "action": "<id>", "say": "<out loud to whoever can see you, or empty>", "note": "<short fact for later, or empty>"}');
   return out.join('\n');
 }
@@ -155,13 +156,22 @@ function chatLog(transcript, myName) {
   return transcript.map((c) => `${c.name}${c.name === myName ? ' (you)' : ''}: ${c.text ? `"${c.text}"` : '(stayed quiet)'}`).join('\n');
 }
 
-export function speakPrompt(m, memory, transcript, round, rounds, myName) {
+// The first word of each recent chat line: models told only "vary your openers" kept opening with the
+// same interjection (เฮ้ย), so the prompt names the ones to avoid.
+const opener = (text) => String(text ?? '').trim().split(/[\s,!?.]+/)[0] ?? '';
+
+export function speakPrompt(m, memory, transcript, round, rounds, myName, replyTo = null) {
+  const turn = replyTo
+    ? `${replyTo} just accused you in front of everyone. Answer ${replyTo} now: deny it, turn it back on them, or show what you know. Start with your point, not an interjection.`
+    : 'Your turn to speak. Accuse, defend yourself, give your alibi, answer or ask someone a question, or stay quiet with an empty chat_message.';
+  const avoid = [...new Set(transcript.slice(-3).map((c) => opener(c.text)).filter(Boolean))];
+  const mine = transcript.filter((c) => c.name === myName && c.text).map((c) => `"${c.text.replace(/\n/g, ' / ')}"`);
   return `${meetingHeader(m, memory)}
 
 CHAT SO FAR:
 ${chatLog(transcript, myName)}
 
-Round ${round} of ${rounds}. Your turn to speak. Accuse, defend yourself, give your alibi, answer or ask someone a question, or stay quiet with an empty chat_message. Do not repeat yourself.
+Round ${round} of ${rounds}. ${turn}${avoid.length ? ` Do not open with ${avoid.map((w) => `"${w}"`).join(' or ')}.` : ''}${mine.length ? ` You already said: ${mine.join('; ')}. Say something you have not said.` : ''} Do not repeat others either: if someone already made your point ("vote X", "X found every body"), add a new reason, ask a question, or keep it to a few words ("+1", "เออ จริง") instead of saying it again. No clock times in chat_message (never "00:32" or "ตอน 00:32"): the times in your log are only for you, so say "just now", "right before the body", "at the start".
 
 Reply as JSON: {"secret_thought": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
 }

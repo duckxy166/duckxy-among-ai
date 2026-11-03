@@ -16,6 +16,7 @@ import { DEFAULT_RULES, namesIn } from '../engine/game.js';
 import { say, clock } from '../i18n.js';
 import { BridgeSeat, sleep, until } from './seat.js';
 import { createFreezer } from './freeze.js';
+import { meetingTurns } from '../match/turns.js';
 
 // Lobby options sent with `configure` (AUBridge names). Discussion and voting are long because the
 // models speak in turns through the real chat.
@@ -292,22 +293,22 @@ export async function runBridgeMatch({
     const first = Math.max(0, alive.indexOf(caller));
     const order = [...alive.slice(first), ...alive.slice(0, first)];
     const transcript = [];
-    for (let round = 1; round <= config.discussionRounds; round++) {
-      for (const s of order) {
-        if (m.ended || match.over) break;
-        emit({ type: 'thinking', players: [s.id] });
-        const r = await freezer.think(() => agents.get(s.id).speak(info, transcript, round, config.discussionRounds));
-        const parts = splitChat(r.chat);
-        const text = parts.join('\n');
-        let sendError = null;
-        for (let i = 0; i < parts.length && !m.ended && !sendError; i++) {
-          if (i > 0) await sleep(1100); // the mod allows one message per second
-          const a = await s.client.act({ do: 'chat', text: parts[i] });
-          if (!a.ok) sendError = `chat: ${a.error}`;
-        }
-        transcript.push({ name: s.name, text });
-        emit({ type: 'chat', p: s.id, round, text, thought: r.thought, suspect: r.suspect, error: r.error ?? sendError, ms: r.ms, model: r.model });
+    const turns = meetingTurns(order, config.discussionRounds);
+    for (let turn = turns.next(); turn && !m.ended && !match.over; turn = turns.next()) {
+      const { seat: s, round, replyTo } = turn;
+      emit({ type: 'thinking', players: [s.id] });
+      const r = await freezer.think(() => agents.get(s.id).speak(info, transcript, round, config.discussionRounds, replyTo?.name ?? null));
+      const parts = splitChat(r.chat);
+      const text = parts.join('\n');
+      let sendError = null;
+      for (let i = 0; i < parts.length && !m.ended && !sendError; i++) {
+        if (i > 0) await sleep(1100); // the mod allows one message per second
+        const a = await s.client.act({ do: 'chat', text: parts[i] });
+        if (!a.ok) sendError = `chat: ${a.error}`;
       }
+      transcript.push({ name: s.name, text });
+      emit({ type: 'chat', p: s.id, round, text, thought: r.thought, suspect: r.suspect, replyTo: replyTo?.id ?? null, error: r.error ?? sendError, ms: r.ms, model: r.model });
+      turns.heard(s, text, alive.find((o) => o.name === r.suspect) ?? null);
     }
 
     // Votes: every copy runs its own meeting timer, so each seat waits for its own copy to open voting.
