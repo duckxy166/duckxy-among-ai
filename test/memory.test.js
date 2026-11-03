@@ -59,8 +59,10 @@ test('sloppy action ids and names still resolve', () => {
 });
 
 test('JSON is read even when wrapped in a code fence, and a missing say means silence', () => {
-  const text = '```json\n{"secret_thought": "ok", "action": "wait:5", "note": ""}\n```';
-  assert.deepEqual(parseJson(text, SCHEMAS.roam.schema), { secret_thought: 'ok', action: 'wait:5', say: '', note: '' });
-  assert.equal(parseJson('{"secret_thought": "no action"}', SCHEMAS.roam.schema), null);
+  const text = '```json\n{"to_camera": "ok", "action": "wait:5", "note": ""}\n```';
+  assert.deepEqual(parseJson(text, SCHEMAS.roam.schema), { to_camera: 'ok', action: 'wait:5', say: '', note: '' });
+  // A brain that still answers with the old field name is read the same way.
+  assert.deepEqual(parseJson('{"secret_thought": "old", "action": "wait:5", "say": "", "note": ""}', SCHEMAS.roam.schema), { to_camera: 'old', action: 'wait:5', say: '', note: '' });
+  assert.equal(parseJson('{"to_camera": "no action"}', SCHEMAS.roam.schema), null);
   assert.equal(parseJson('not json', SCHEMAS.roam.schema), null);
 });

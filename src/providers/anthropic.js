@@ -19,7 +19,9 @@ export async function createAnthropic(seat, preset) {
         // The system prompt is fixed for the whole match, so cache it.
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: user }],
-        output_config: { ...(effort ? { effort } : {}), format: { type: 'json_schema', schema } },
+        // jsonMode "none": no structured output, the model writes the JSON itself. Opus refuses every turn
+        // of this game when a json_schema comes with its system prompt, and answers without one.
+        output_config: { ...(effort ? { effort } : {}), ...(seat.jsonMode === 'none' ? {} : { format: { type: 'json_schema', schema } }) },
       };
       const res = fallback
         ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })

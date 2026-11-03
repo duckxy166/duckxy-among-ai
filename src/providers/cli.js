@@ -80,7 +80,9 @@ const DIALECTS = {
     stripEnv: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
     // agy's model ids carry the effort ("gemini-3.8-flash-low"), so effort is not passed.
     args: ({ model }) => ['--model', model, '--input-format', 'stream-json', '--output-format', 'stream-json', '--disable-slash-commands'],
-    input: (text) => `${JSON.stringify({ event: 'user', message: { role: 'user', content: text } })}\n`,
+    // Google's filter blocks a prompt with ศพ (corpse) in it ("the prompt contains sensitive words"), and
+    // the Thai memory log says ศพ for every body: Gemini reads ร่าง instead. ฆ่า and ตาย pass.
+    input: (text) => `${JSON.stringify({ event: 'user', message: { role: 'user', content: text.replaceAll('ศพ', 'ร่าง') } })}\n`,
     read(m, seat, state) {
       if (m.event === 'init') state.model = m.init?.model;
       if (m.event !== 'result') return null;
