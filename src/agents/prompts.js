@@ -4,7 +4,7 @@
 import { clock } from '../i18n.js';
 
 const LANGUAGE = {
-  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "เห้ย อย่าโหวตผมดิ", "อ้าวเฮ้ย ใครตายอะ". Keep game words in English (vent, sus, impostor, task, Electrical...)',
+  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมทำ task อยู่จริงๆ". Vary how messages start: real players do not open every line with "เห้ย" Keep game words in English (vent, sus, impostor, task, Electrical...)',
   en: 'English: casual, like friends on voice chat',
 };
 
@@ -79,10 +79,10 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 TWO VOICES: every reply has both
 1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
 2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a real player types in the game chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
+Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a real player types in the game chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts. Do not open with the same word the last few messages opened with.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
-Claims about where you were, who you saw and when must come from your memory log. Say the exact time only when it nails someone; otherwise talk like a player ("just now", "when the lights went out"). If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
+Claims about where you were, who you saw and when must come from your memory log. The [mm:ss] times in your log are for you only: players have no clock on screen and never quote one ("00:13"). Say when like a player ("just now", "right at the start", "before the lights went out", "after the last meeting") and name the room and who was there. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
 
 LANGUAGE: write secret_thought, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
 ${persona ? `\nYOUR PERSONALITY: ${persona}\n` : ''}${longTerm ? `\nYOUR MEMORY FROM PAST MATCHES (only you can read this):\n${longTerm}\n` : ''}
@@ -155,13 +155,16 @@ function chatLog(transcript, myName) {
   return transcript.map((c) => `${c.name}${c.name === myName ? ' (you)' : ''}: ${c.text ? `"${c.text}"` : '(stayed quiet)'}`).join('\n');
 }
 
-export function speakPrompt(m, memory, transcript, round, rounds, myName) {
+export function speakPrompt(m, memory, transcript, round, rounds, myName, replyTo = null) {
+  const turn = replyTo
+    ? `${replyTo} just accused you in front of everyone. Answer ${replyTo} now: deny it, turn it back on them, or show what you know. Keep it short and heated.`
+    : 'Your turn to speak. Accuse, defend yourself, give your alibi, answer or ask someone a question, or stay quiet with an empty chat_message.';
   return `${meetingHeader(m, memory)}
 
 CHAT SO FAR:
 ${chatLog(transcript, myName)}
 
-Round ${round} of ${rounds}. Your turn to speak. Accuse, defend yourself, give your alibi, answer or ask someone a question, or stay quiet with an empty chat_message. Do not repeat yourself.
+Round ${round} of ${rounds}. ${turn} Do not repeat yourself: if you gave your alibi already, add something new or react to the last message.
 
 Reply as JSON: {"secret_thought": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
 }
