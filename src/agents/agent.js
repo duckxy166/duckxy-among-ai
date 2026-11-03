@@ -1,5 +1,5 @@
 // One player's brain. It owns a private EpisodicMemory and talks to exactly one model. Every
-// reply is split in two: secret_thought (kept, logged, shown to viewers) and the public part.
+// reply is split in two: to_camera (the thought: kept, logged, shown to viewers) and the public part.
 
 import { EpisodicMemory } from './memory.js';
 import { SCHEMAS, roamPrompt, speakPrompt, votePrompt, reflectPrompt } from './prompts.js';
@@ -40,6 +40,8 @@ export function matchName(raw, names, keywords = []) {
 
 // Fields a reply may leave out (read as an empty string): `say` is newer than some scripted or custom brains.
 const OPTIONAL = new Set(['say']);
+// Older names a reply may still use: the thought field was secret_thought until Claude refused it.
+const ALIASES = { to_camera: 'secret_thought' };
 
 export function parseJson(text, schema) {
   if (!text) return null;
@@ -52,9 +54,10 @@ export function parseJson(text, schema) {
   if (!data || typeof data !== 'object') return null;
   const out = {};
   for (const key of Object.keys(schema.properties)) {
-    const missing = data[key] === undefined || data[key] === null;
+    const value = data[key] ?? (ALIASES[key] ? data[ALIASES[key]] : undefined);
+    const missing = value === undefined || value === null;
     if (missing && !OPTIONAL.has(key)) return null;
-    out[key] = missing ? '' : String(data[key]);
+    out[key] = missing ? '' : String(value);
   }
   return out;
 }
@@ -118,7 +121,7 @@ export class Agent {
       if (r.data) this.stats.invalid++;
       action = 'wait:5';
     }
-    const thought = clip(r.data?.secret_thought, 500);
+    const thought = clip(r.data?.to_camera, 500);
     const note = clip(r.data?.note, 200);
     const said = clip(r.data?.say, 120);
     this.memory.thought(view.t, 'roam', thought);
@@ -131,7 +134,7 @@ export class Agent {
     const r = await this.ask('speak', speakPrompt(meeting, this.memory, transcript, round, rounds, this.seat.name, replyTo),
       this.seat.meetingEffort ?? this.seat.effort,
       { meeting, transcript, round, replyTo, evidence: this.memory.evidence() });
-    const thought = clip(r.data?.secret_thought, 500);
+    const thought = clip(r.data?.to_camera, 500);
     const others = meeting.alive.filter((n) => n !== this.seat.name);
     this.memory.thought(meeting.t, `meeting ${meeting.n}`, thought);
     return {
@@ -145,7 +148,7 @@ export class Agent {
     const r = await this.ask('vote', votePrompt(meeting, this.memory, transcript, options, this.seat.name),
       this.seat.meetingEffort ?? this.seat.effort,
       { meeting, transcript, options, evidence: this.memory.evidence() });
-    const thought = clip(r.data?.secret_thought, 500);
+    const thought = clip(r.data?.to_camera, 500);
     this.memory.thought(meeting.t, `vote ${meeting.n}`, thought);
     const vote = matchName(r.data?.vote, options, ['skip']) ?? 'skip';
     if (r.data && !matchName(r.data.vote, options, ['skip'])) this.stats.invalid++;
@@ -156,7 +159,7 @@ export class Agent {
     const r = await this.ask('reflect', reflectPrompt(result, this.memory), this.seat.meetingEffort ?? this.seat.effort, { result });
     return {
       lesson: clip(r.data?.lesson, 400),
-      thought: clip(r.data?.secret_thought, 500),
+      thought: clip(r.data?.to_camera, 500),
       error: r.error, ms: r.ms, model: r.model,
     };
   }

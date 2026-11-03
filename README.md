@@ -95,8 +95,9 @@ Seat fields: `id` (file-safe, used for its long-term memory file), `name` (what 
 it), `color`, `provider`, `model`, `label` (shown in the viewer), and optionally `persona` (a short
 personality), `effort` / `meetingEffort` (Claude: `low`…`max`), `extra` (extra request fields for
 OpenAI-compatible APIs, e.g. `{"reasoning_effort": "low"}`), `jsonMode` (`json_schema`, `json_object`
-or `none` if a server rejects `response_format`), `baseURL`, `apiKeyEnv`, `concurrency`,
-`enabled: false`.
+or `none` if a server rejects `response_format`; on a Claude seat, `none` drops structured output,
+which Claude Opus 5.5 needs: with a JSON schema it refuses every turn of this game), `baseURL`,
+`apiKeyEnv`, `concurrency`, `enabled: false`.
 
 ### Playing on a subscription
 

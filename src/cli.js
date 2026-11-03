@@ -165,7 +165,7 @@ async function check() {
     try {
       const res = await provider.complete({
         system: 'You are checking that the connection works.',
-        user: 'Reply as JSON: {"secret_thought": "a few words", "ok": "yes"}',
+        user: 'Reply as JSON: {"to_camera": "a few words", "ok": "yes"}',
         schema: SCHEMAS.ping.schema, schemaName: SCHEMAS.ping.name, effort: 'low',
         context: { kind: 'ping', seat: s },
       });

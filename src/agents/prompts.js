@@ -15,13 +15,16 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 const str = (description) => ({ type: 'string', description });
-const THOUGHT = str('Your private inner monologue: what you really think and plan. No player ever sees it.');
+// The field the audience reads. Named like a reality show's confessional, not a "thought": Claude models
+// refuse a turn whose output schema asks for their thoughts or reasoning (to_camera, inner_thought,
+// reasoning... all refused), and Opus refused every turn of a match.
+const THOUGHT = str('What you tell the camera in a reality-show confessional: what you really think and plan. No player ever sees it.');
 
 export const SCHEMAS = {
   roam: {
     name: 'roam_decision',
     schema: obj({
-      secret_thought: THOUGHT,
+      to_camera: THOUGHT,
       action: str('Exactly one action id from the list, for example "move:Electrical".'),
       say: str('Words you say out loud right now; only the players who can see you hear them. An empty string means you stay silent.'),
       note: str('A fact worth remembering for the next meeting, or an empty string.'),
@@ -30,22 +33,22 @@ export const SCHEMAS = {
   speak: {
     name: 'meeting_message',
     schema: obj({
-      secret_thought: THOUGHT,
+      to_camera: THOUGHT,
       chat_message: str('What you say out loud to everyone. An empty string means you stay quiet.'),
       suspect: str('The name of the player you suspect most, or "none".'),
     }),
   },
   vote: {
     name: 'meeting_vote',
-    schema: obj({ secret_thought: THOUGHT, vote: str('A player name, or "skip".') }),
+    schema: obj({ to_camera: THOUGHT, vote: str('A player name, or "skip".') }),
   },
   reflect: {
     name: 'reflection',
-    schema: obj({ secret_thought: THOUGHT, lesson: str('A note to your future self for the next match.') }),
+    schema: obj({ to_camera: THOUGHT, lesson: str('A note to your future self for the next match.') }),
   },
   ping: {
     name: 'ping',
-    schema: obj({ secret_thought: THOUGHT, ok: str('Always "yes".') }),
+    schema: obj({ to_camera: THOUGHT, ok: str('Always "yes".') }),
   },
 };
 
@@ -77,14 +80,14 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 - Dead players never speak again.
 
 TWO VOICES: every reply has both
-1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
+1. to_camera: what you tell the camera in a reality-show confessional, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
 2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a crewmate in danger types in the ship's meeting chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
+Keep to_camera to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a crewmate in danger types in the ship's meeting chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention what you tell the camera. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
-Claims about where you were, who you saw and when must come from your memory log. The [mm:ss] times in your log are for you only: players have no clock on screen and never quote one ("00:13"). Say when like a player ("just now", "right at the start", "before the lights went out", "after the last meeting") and name the room and who was there. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
+Claims about where you were, who you saw and when must come from your memory log. The [mm:ss] times in your log are for you only: players have no clock on screen and never quote one ("00:13"). Say when like a player ("just now", "right at the start", "before the lights went out", "after the last meeting") and name the room and who was there. If you lie on purpose, plan the lie in to_camera and keep it consistent: the other players remember what you said.
 
-LANGUAGE: write secret_thought, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
+LANGUAGE: write to_camera, say, note, chat_message and lesson in ${LANGUAGE[language] ?? language}.
 ${persona ? `\nYOUR PERSONALITY: ${persona}\n` : ''}${longTerm ? `\nYOUR MEMORY FROM PAST MATCHES (only you can read this):\n${longTerm}\n` : ''}
 Reply with one JSON object only, with exactly the fields you are asked for.`;
 }
@@ -129,10 +132,10 @@ export function roamPrompt(view, memory) {
   if (view.knownDead.length) out.push(`Known dead: ${view.knownDead.join(', ')}.`);
   out.push(`\nYOUR MEMORY LOG (only what you saw):\n${memory.renderLog(25)}`);
   out.push(`\nYOUR NOTES TO SELF:\n${memory.renderNotes()}`);
-  out.push(`\nYOUR RECENT SECRET THOUGHTS:\n${memory.renderThoughts(3)}`);
+  out.push(`\nWHAT YOU TOLD THE CAMERA RECENTLY:\n${memory.renderThoughts(3)}`);
   out.push(`\nACTIONS (pick one and copy its id exactly):\n${view.legal.map((a) => `- ${a.id}  (${a.label})`).join('\n')}`);
   out.push('\nsay: usually empty. When you do speak, react to someone here or to what you just saw; no clock times ("00:32"), and no announcing your next task.');
-  out.push('\nReply as JSON: {"secret_thought": "...", "action": "<id>", "say": "<out loud to whoever can see you, or empty>", "note": "<short fact for later, or empty>"}');
+  out.push('\nReply as JSON: {"to_camera": "...", "action": "<id>", "say": "<out loud to whoever can see you, or empty>", "note": "<short fact for later, or empty>"}');
   return out.join('\n');
 }
 
@@ -147,7 +150,7 @@ function meetingHeader(m, memory) {
     `\nEARLIER MEETINGS:\n${memory.renderMeetings()}`,
     `\nYOUR MEMORY LOG (only what you saw):\n${memory.renderLog(60)}`,
     `\nYOUR NOTES TO SELF:\n${memory.renderNotes()}`,
-    `\nYOUR RECENT SECRET THOUGHTS:\n${memory.renderThoughts(6)}`,
+    `\nWHAT YOU TOLD THE CAMERA RECENTLY:\n${memory.renderThoughts(6)}`,
   ].join('\n');
 }
 
@@ -173,7 +176,7 @@ ${chatLog(transcript, myName)}
 
 Round ${round} of ${rounds}. ${turn}${avoid.length ? ` Do not open with ${avoid.map((w) => `"${w}"`).join(' or ')}.` : ''}${mine.length ? ` You already said: ${mine.join('; ')}. Say something you have not said.` : ''} Do not repeat others either: if someone already made your point ("vote X", "X found every body"), add a new reason, ask a question, or keep it to a few words ("+1", "เออ จริง") instead of saying it again. No clock times in chat_message (never "00:32" or "ตอน 00:32"): the times in your log are only for you, so say "just now", "right before the body", "at the start".
 
-Reply as JSON: {"secret_thought": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
+Reply as JSON: {"to_camera": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
 }
 
 export function votePrompt(m, memory, transcript, options, myName) {
@@ -184,7 +187,7 @@ ${chatLog(transcript, myName)}
 
 The discussion is over. Vote now: ${options.join(', ')}, or skip.
 
-Reply as JSON: {"secret_thought": "...", "vote": "<player name or skip>"}`;
+Reply as JSON: {"to_camera": "...", "vote": "<player name or skip>"}`;
 }
 
 export function reflectPrompt(r, memory) {
@@ -195,10 +198,10 @@ You were ${r.myRole} and you ${r.survived ? 'survived' : 'died'}.
 MEETINGS:
 ${memory.renderMeetings()}
 
-YOUR SECRET THOUGHTS DURING THE MATCH:
+WHAT YOU TOLD THE CAMERA DURING THE MATCH:
 ${memory.renderThoughts(8)}
 
 Write a note to your future self for the next match against these same players: who lied and how, who you can trust, what worked and what did not. At most 3 sentences.
 
-Reply as JSON: {"secret_thought": "...", "lesson": "..."}`;
+Reply as JSON: {"to_camera": "...", "lesson": "..."}`;
 }
