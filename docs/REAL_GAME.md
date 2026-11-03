@@ -205,6 +205,11 @@ and the mod corrects the size if the game's saved setting overrides it) with its
 each window `Among Us - <name>` so OBS can tell the copies apart. Live, 6 copies, mock brains: all six
 `UnityWndClass` windows read `Among Us - Haiku1` … `Haiku6` at a 1920×1080 client area.
 
+Thai marks (2026-11-03): TextMeshPro in this build has no mark positioning (GPOS mark-to-base, mark-to-mark),
+so a tone mark after an upper vowel sat at its own default height and sank into the vowel (นั้น, เมื่อ). The
+mod adds pair adjustments to its Thai font's kerning table, which TMP does apply; 45 pairs from Leelawadee
+UI. Live, 6 copies, mock brains: เมื่อกี้ in the meeting chat showed ่ and ้ clear above ื and ี.
+
 Meeting chat on screen (2026-11-01, `bridge.chat: true` → `--aub-chat=1`): with nobody clicking the chat
 button, a recorded copy showed only the voting panel. Each copy now opens its chat while the meeting is in
 discussion or voting and closes it for the results. Live, 4 and 6 copies, mock brains: at the first meeting

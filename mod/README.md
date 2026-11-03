@@ -28,6 +28,7 @@ changes below are by Duckxy under the same license. Upstream's protocol specs (`
 | `Game.cs`, `GamePatches.cs` `PSelectRoles`, `Bridge.cs` | `impostors {names}` (host): a prefix on `RoleManager.SelectRoles` deals Impostor to those players and Crewmate to the rest | to choose the impostor for an episode |
 | `Game.cs` `ShowChat`, `Plugin.cs` | `--aub-chat=1` opens the meeting chat on this copy's screen through discussion and voting and closes it for the results | nobody clicks the chat button on a bot copy, so a recording of it showed the voting panel and never what was said |
 | `ThaiFont.cs` (new) | a TMP font asset from Windows' Leelawadee UI (or Tahoma) becomes a fallback of every game font | the game's fonts have no Thai glyphs, so Thai chat showed as boxes |
+| `ThaiFont.cs` `AddMarkPairs` | pair adjustments in that font's kerning table: a tone mark after an upper vowel moves up, marks after ป ฝ ฟ ฬ move left, a vowel under ฎ ฏ moves down, each by the glyphs' own metrics | this TextMeshPro has no mark positioning, so ้ sank into ั in นั้น and ่ into ื in เมื่อ |
 
 Details and test results: [docs/REAL_GAME.md](../docs/REAL_GAME.md).
 
