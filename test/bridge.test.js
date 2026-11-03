@@ -699,7 +699,8 @@ test('names, chat length and launch arguments', () => {
 test('the game stands still while any brain thinks, and resumes when the last one is done', async () => {
   const sent = [];
   const fake = (id) => ({ id, request: async (cmd, args) => { sent.push(`${id}:${cmd}:${args.on}`); return { ok: true }; } });
-  const f = createFreezer([fake(1), fake(2)], { keepAliveMs: 60000 });
+  const changes = [];
+  const f = createFreezer([fake(1), fake(2)], { keepAliveMs: 60000, onChange: (on, wall) => changes.push([on, wall]) });
   let release;
   const slow = f.think(() => new Promise((r) => { release = r; }));
   assert.equal(f.paused, true);
@@ -713,6 +714,8 @@ test('the game stands still while any brain thinks, and resumes when the last on
   assert.ok(f.pausedMs() >= 25);
   await f.stop();
   assert.deepEqual(sent, ['1:pause:true', '2:pause:true', '1:pause:false', '2:pause:false']);
+  assert.deepEqual(changes.map(([on]) => on), [true, false]); // one pause, however many brains overlapped
+  assert.ok(changes[1][1] - changes[0][1] >= 25);
   await f.think(async () => null); // after stop: no more pauses
   assert.equal(sent.length, 4);
   const off = createFreezer([fake(3)], { enabled: false });
@@ -729,6 +732,11 @@ test('a scripted round pauses every copy around each brain call', async () => {
     const pauses = ship.ship.calls.filter((c) => c.do === 'pause');
     assert.ok(pauses.some((c) => c.on) && pauses.some((c) => !c.on));
     for (const name of NAMES) assert.equal(pauses.filter((c) => c.who === name).at(-1).on, false, `${name} left paused`);
+    // The log has every pause, each start followed by its end, with wall-clock times in order.
+    const freezes = r.events.filter((e) => e.type === 'freeze');
+    assert.ok(freezes.length >= 2 && freezes.every((e, i) => e.on === (i % 2 === 0) && (i === 0 || e.wall >= freezes[i - 1].wall)));
+    assert.equal(freezes.at(-1).on, false);
+    assert.ok(typeof r.events.find((e) => e.type === 'match_start').wall === 'number');
   } finally {
     await ship.close();
   }
