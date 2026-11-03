@@ -35,6 +35,11 @@ test('meeting prompts ask for player talk: no clock times, an answer when accuse
   const m = { n: 1, t: 30, reason: 'button', callerName: 'Red', alive: ['Red', 'Pink'], dead: [] };
   assert.match(speakPrompt(m, memory, [], 1, 2, 'Pink', 'Red'), /Red just accused you/);
   assert.doesNotMatch(speakPrompt(m, memory, [], 1, 2, 'Pink'), /just accused you/);
+  // The openers of the last three lines and the speaker's own earlier lines are spelled out.
+  const chat = [{ name: 'Pink', text: 'ไม่ใช่ผม' }, { name: 'Red', text: 'เฮ้ย Pink sus' }, { name: 'Blue', text: 'เฮ้ย จริงดิ' }, { name: 'Red', text: 'โหวต Pink' }];
+  const p = speakPrompt(m, memory, chat, 2, 2, 'Pink');
+  assert.match(p, /Do not open with "เฮ้ย" or "โหวต"\./);
+  assert.match(p, /You already said: "ไม่ใช่ผม"\./);
   const sys = systemPrompt({ me: { id: 'pink', name: 'Pink' }, role: 'crew', partners: [], roster: [{ id: 'pink', name: 'Pink', color: 'pink' }], rules: { emergenciesPerPlayer: 1, confirmEjects: true }, impostorCount: 1, language: 'th', realGame: true });
   assert.match(sys, /never quote one/);
 });

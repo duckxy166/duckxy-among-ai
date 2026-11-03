@@ -4,8 +4,8 @@
 import { clock } from '../i18n.js';
 
 const LANGUAGE = {
-  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมทำ task อยู่จริงๆ". Vary how messages start: real players do not open every line with "เห้ย" or "เดี๋ยว". Friendly rude is fine (ไอ้บ้า, มั่ว, sus), but no กู/มึง: say ผม/เรา and นาย/แก or the name of the player Keep game words in English (vent, sus, impostor, task, Electrical...)',
-  en: 'English: casual, like friends on voice chat',
+  th: 'Thai (ภาษาไทย), in character: you are a crewmate aboard this spaceship, not someone playing a game. People are really dying, a killer is among you, and you talk the way a scared, angry or scheming crewmate would on the ship\'s comms, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมซ่อมสายไฟอยู่จริงๆ". Never mention games, players, Discord or winning. Vary how messages start: nobody opens every line with "เห้ย" or "เดี๋ยว". Keep the ship\'s words in English (vent, sus, impostor, task, Electrical...)',
+  en: 'English, in character: you are a crewmate aboard this spaceship, not someone playing a game. People are really dying and a killer is among you; talk like a scared, angry or scheming crewmate on the ship\'s comms. Never mention games, players or winning.',
 };
 
 const obj = (properties) => ({
@@ -79,7 +79,7 @@ ${realGame ? `- This is the real Among Us on The Skeld. Time is in seconds since
 TWO VOICES: every reply has both
 1. secret_thought: your private inner monologue, brutally honest. What you believe, who you suspect, the lie you are about to tell and why. No player ever sees it; the audience watching the match does.
 2. The public part (action, say, chat_message, vote): what the other players see and hear. Impostors lie here; crewmates may bluff.
-Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a real player types in the game chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
+Keep secret_thought to 1-3 short sentences. say is one short sentence (at most 100 characters). chat_message is how a crewmate in danger types in the ship's meeting chat: short, casual, emotional, a bit dramatic and funny, in everyday slang of your language ("Haiku5 is the killer!!", "trust me bro", "not me, it's HIM"). No lists, no markdown, no stage directions, no report-style alibis, and never mention your secret thoughts. Do not open with the same word or phrase as any of the last three messages.${realGame ? ' Put 1-3 lines in it, each a few words (about 40 characters at most); each line goes out as its own chat message. React first (accuse, panic, defend, joke), explain less.' : ' Keep it to 1-2 short sentences.'}
 
 ALIBI DISCIPLINE
 Claims about where you were, who you saw and when must come from your memory log. The [mm:ss] times in your log are for you only: players have no clock on screen and never quote one ("00:13"). Say when like a player ("just now", "right at the start", "before the lights went out", "after the last meeting") and name the room and who was there. If you lie on purpose, plan the lie in secret_thought and keep it consistent: the other players remember what you said.
@@ -155,16 +155,22 @@ function chatLog(transcript, myName) {
   return transcript.map((c) => `${c.name}${c.name === myName ? ' (you)' : ''}: ${c.text ? `"${c.text}"` : '(stayed quiet)'}`).join('\n');
 }
 
+// The first word of each recent chat line: models told only "vary your openers" kept opening with the
+// same interjection (เฮ้ย), so the prompt names the ones to avoid.
+const opener = (text) => String(text ?? '').trim().split(/[\s,!?.]+/)[0] ?? '';
+
 export function speakPrompt(m, memory, transcript, round, rounds, myName, replyTo = null) {
   const turn = replyTo
-    ? `${replyTo} just accused you in front of everyone. Answer ${replyTo} now: deny it, turn it back on them, or show what you know. Keep it short and heated.`
+    ? `${replyTo} just accused you in front of everyone. Answer ${replyTo} now: deny it, turn it back on them, or show what you know. Start with your point, not an interjection.`
     : 'Your turn to speak. Accuse, defend yourself, give your alibi, answer or ask someone a question, or stay quiet with an empty chat_message.';
+  const avoid = [...new Set(transcript.slice(-3).map((c) => opener(c.text)).filter(Boolean))];
+  const mine = transcript.filter((c) => c.name === myName && c.text).map((c) => `"${c.text.replace(/\n/g, ' / ')}"`);
   return `${meetingHeader(m, memory)}
 
 CHAT SO FAR:
 ${chatLog(transcript, myName)}
 
-Round ${round} of ${rounds}. ${turn} Do not repeat yourself, and do not repeat others: if someone already said your point ("vote X"), add a new reason, ask a question, or keep it to a few words ("+1", "เออ จริง") instead of saying it again. No clock times in chat_message (never "00:32" or "ตอน 00:32"): the times in your log are only for you, so say "just now", "right before the body", "at the start".
+Round ${round} of ${rounds}. ${turn}${avoid.length ? ` Do not open with ${avoid.map((w) => `"${w}"`).join(' or ')}.` : ''}${mine.length ? ` You already said: ${mine.join('; ')}. Say something you have not said.` : ''} Do not repeat others either: if someone already made your point ("vote X", "X found every body"), add a new reason, ask a question, or keep it to a few words ("+1", "เออ จริง") instead of saying it again. No clock times in chat_message (never "00:32" or "ตอน 00:32"): the times in your log are only for you, so say "just now", "right before the body", "at the start".
 
 Reply as JSON: {"secret_thought": "...", "chat_message": "...", "suspect": "<player name or none>"}`;
 }
