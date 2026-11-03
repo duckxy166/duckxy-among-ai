@@ -4,7 +4,7 @@
 import { clock } from '../i18n.js';
 
 const LANGUAGE = {
-  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมทำ task อยู่จริงๆ". Vary how messages start: real players do not open every line with "เห้ย" or "เดี๋ยว". Friendly rude is fine (ไอ้บ้า, มั่ว, sus), but no กู/มึง: say ผม/เรา and นาย/แก or the player's name Keep game words in English (vent, sus, impostor, task, Electrical...)',
+  th: 'Thai (ภาษาไทย): casual, like Thai friends playing Among Us on Discord, e.g. "Haiku5 เป็นฆาตกร!!", "เชื่อผมดิ", "ไม่ใช่ผม มันต่างหาก", "อย่าโหวตผมดิ", "อ้าว ใครตายอะ", "มั่วละ", "ผมทำ task อยู่จริงๆ". Vary how messages start: real players do not open every line with "เห้ย" or "เดี๋ยว". Friendly rude is fine (ไอ้บ้า, มั่ว, sus), but no กู/มึง: say ผม/เรา and นาย/แก or the name of the player Keep game words in English (vent, sus, impostor, task, Electrical...)',
   en: 'English: casual, like friends on voice chat',
 };
 
