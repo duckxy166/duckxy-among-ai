@@ -2,7 +2,8 @@
 // (`pause {on}`, Time.timeScale 0 in the mod) from the moment one seat starts a model call until the last
 // one running returns, so a slow model loses no game time. Seats still think on their own and at once.
 // While paused, the runner says so again every few seconds; a copy that stops hearing it resumes by itself.
-export function createFreezer(clients, { enabled = true, keepAliveMs = 5000, warn = () => {} } = {}) {
+// onChange(on, wall) hears every start and end of a pause, with the wall clock (Date.now()) at that moment.
+export function createFreezer(clients, { enabled = true, keepAliveMs = 5000, warn = () => {}, onChange = () => {} } = {}) {
   let busy = 0;
   let stopped = false;
   let on = false;
@@ -31,6 +32,7 @@ export function createFreezer(clients, { enabled = true, keepAliveMs = 5000, war
       pausedMs += Date.now() - since;
       clearInterval(keepAlive);
     }
+    onChange(on, on ? since : Date.now());
     send();
   };
 

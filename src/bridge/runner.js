@@ -84,7 +84,11 @@ export async function runBridgeMatch({
     confirmEjects: lobby.confirmEjects, emergenciesPerPlayer: lobby.emergencyMeetings, killCooldown: lobby.killCooldown,
   };
   const maxMs = (bridge.maxMinutes ?? 20) * 60000;
-  const freezer = createFreezer([...clients.values()], { enabled: bridge.freeze !== false, warn: (t) => log(`  ! ${t}`) });
+  // Every pause goes in the log with its wall clock: a recording of the copies keeps running while the game
+  // stands still, and those stretches are what an edit cuts.
+  const freezer = createFreezer([...clients.values()], {
+    enabled: bridge.freeze !== false, warn: (t) => log(`  ! ${t}`), onChange: (on, wall) => emit({ type: 'freeze', on, wall }),
+  });
   // Game time: real time minus the time the game stood still while brains were thinking.
   const gameMs = () => Date.now() - freezer.pausedMs();
 
@@ -455,7 +459,7 @@ export async function runBridgeMatch({
     }
 
     emit({
-      type: 'match_start', matchId, seed: config.seed, language: config.language, body: 'among-us',
+      type: 'match_start', matchId, seed: config.seed, language: config.language, body: 'among-us', wall: Date.now(),
       board: BOARD, rooms: ROOMS, edges: EDGES, vents: VENT_GROUPS, rules,
       players: seats.map((seat) => ({
         id: seat.id, name: seat.name, color: seat.color, hex: COLORS[seat.color], label: seat.label,
