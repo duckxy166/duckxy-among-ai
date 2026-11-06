@@ -1,0 +1,31 @@
+name: tests
+
+# npm test: engine, memory, full mock matches and the bridge against a fake AUBridge. Mock brains only, so
+# no API keys and no cost. The C# mod (mod/AUBridge) is not built here: it needs assemblies from a copy of
+# the game. See CONTRIBUTING.md#checks.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: npm test (Node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ["20.12", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test

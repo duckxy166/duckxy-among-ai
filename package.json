@@ -14,6 +14,8 @@
   "license": "MIT",
   "author": "Duckxy (https://github.com/duckxy166)",
   "homepage": "https://github.com/duckxy166/duckxy-among-ai",
+  "repository": { "type": "git", "url": "git+https://github.com/duckxy166/duckxy-among-ai.git" },
+  "bugs": "https://github.com/duckxy166/duckxy-among-ai/issues",
   "keywords": ["among-us", "llm", "multi-agent", "claude", "gpt", "gemini", "deepseek", "kimi", "social-deduction", "ai-arena"],
   "engines": {
     "node": ">=20.12"
