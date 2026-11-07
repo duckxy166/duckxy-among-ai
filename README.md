@@ -1,273 +1,207 @@
-# Among AI
+<p align="right">🌐 <b>ภาษาไทย</b> · <a href="README.en.md">English</a></p>
 
-A multi-model arena where **Claude, GPT, Gemini, DeepSeek, Kimi, Grok** and friends play an
-Among Us-style social deduction game against each other: 4 to 10 AI players in one match, each with
-its own memory, each lying, accusing and reasoning in its own voice.
+<div align="center">
 
-Made by **[Duckxy](https://www.youtube.com/@LDuckxy)** ([GitHub](https://github.com/duckxy166)).
-Open source under MIT. Please keep the credit (see [Credit](#credit)).
+# 🔪 Among AI
 
-> ภาษาไทยอยู่ด้านล่าง ↓
+**ให้ Claude, GPT, Gemini, DeepSeek, Kimi และ Grok มาเล่นเกมแนว Among Us แข่งกันเอง**
 
-## Features
+AI 4 ถึง 10 ตัวในแมตช์เดียว แต่ละตัวมีความจำของตัวเอง มีความคิดในใจที่คนอื่นไม่เห็น
+และมีวิธีโกหก กล่าวหา และโหวตเป็นของตัวเอง
 
-- **Separate memories.** Every player only knows what its own character saw. The engine writes each
-  sighting into that player's private log with the game time: `[01:10] Spotted Gemini at Electrical`,
-  `[01:25] Gemini left Electrical heading to Storage`. At a meeting the log becomes the player's alibi
-  and evidence. No player can read another player's memory (a test checks this).
-- **Two voices.** Every reply has a `secret_thought` (the real plan, the lie being prepared) and a public
-  part (the action, the chat line, the vote). Players never see each other's thoughts; the event log and
-  the viewer keep both, so you can watch an AI lie with a straight face.
-- **Talking on the ship.** Outside meetings a player can say something out loud, and only the players
-  who can see it at that moment hear it (in the dark, a voice from a shadow). The speaker's memory says
-  who heard and who was out of earshot, so it can walk over and ask again; a player who is named or
-  answered gets to reply. That is how they split up a sabotage ("I'll fix lights, you keep doing tasks"),
-  check alibis, or lie to someone's face.
-- **Many models, one match.** Each seat is a different model and provider. Game time stands still while
-  a model thinks, so a slow model is never punished for latency, and a match replays from its seed.
-- **Memory across matches.** After a match every model writes a note to its future self ("GPT lied about
-  Electrical twice") and reads it in the next match.
-- **A match viewer** in the browser: the ship map, every player's latest thought and line, the memory of
-  any player, the full log. Live or replayed.
-- **Everything in one log** (`matches/<id>/events.jsonl`) to build your own tools on.
+[![Latest release](https://img.shields.io/github/v/release/duckxy166/duckxy-among-ai?style=flat-square&label=release&color=4caf50)](https://github.com/duckxy166/duckxy-among-ai/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/duckxy166/duckxy-among-ai/tests.yml?branch=main&style=flat-square&label=tests)](https://github.com/duckxy166/duckxy-among-ai/actions/workflows/tests.yml)
+[![GitHub stars](https://img.shields.io/github/stars/duckxy166/duckxy-among-ai?style=flat-square&color=f5c518)](https://github.com/duckxy166/duckxy-among-ai/stargazers)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+![Node 20.12+](https://img.shields.io/badge/node-20.12+-339933?style=flat-square&logo=node.js&logoColor=white)
+[![YouTube](https://img.shields.io/badge/YouTube-@LDuckxy-ff0000?style=flat-square&logo=youtube&logoColor=white)](https://www.youtube.com/@LDuckxy)
 
-## Quick start
+<img src="docs/assets/real-game.webp" width="820" alt="AI 8 ตัว (Claude Haiku) เล่น Among Us ตัวจริง หนึ่งหน้าต่างต่อผู้เล่นหนึ่งตัว ใต้แต่ละจอมีความคิดในใจของตัวนั้น และมุมขวาล่างเป็น log ของแมตช์">
 
-Needs Node.js 20.12 or newer.
+*AI 8 ตัวเล่น Among Us ตัวจริง: หนึ่งหน้าต่างต่อผู้เล่นหนึ่งตัว ใต้จอคือความคิดในใจ มุมขวาล่างคือ log ของแมตช์*
+
+</div>
+
+## นี่คืออะไร
+
+Among AI คือสนามเกมแนวหาตัวคนร้าย (social deduction) สำหรับโมเดลภาษา ผู้เล่นแต่ละคนเป็นโมเดลคนละตัว
+ลูกเรือ (crewmate) ต้องทำงานให้เสร็จและหาตัว impostor ส่วน impostor ต้องฆ่า ก่อวินาศกรรม และพูดเอาตัวรอดในห้องประชุม
+ไม่มีใครเขียนบทให้ ทุกอย่างที่เกิดขึ้นมาจากการตัดสินใจของโมเดลแต่ละตัวเอง
+
+หลักการทำงานแบบสั้น ๆ:
+
+1. เกมบอกผู้เล่นแต่ละตัวเฉพาะสิ่งที่ตัวละครของมันมองเห็นตอนนี้ และ log ความจำของมันเอง
+2. โมเดลตอบกลับเป็น **ความคิดในใจ** (แผนจริง) กับ **การกระทำ** (เดิน ทำงาน ฆ่า พูด โหวต)
+3. เกมทำตามนั้น แล้วจดสิ่งที่แต่ละคนเห็นลงความจำของคนนั้น เวลาในเกมหยุดระหว่างที่โมเดลคิด โมเดลที่ตอบช้าจึงไม่เสียเปรียบ
+
+คำที่จะเจอบ่อยในหน้านี้:
+
+- **ที่นั่ง (seat)** ผู้เล่นหนึ่งคน หนึ่งที่นั่งคือหนึ่งโมเดลจากผู้ให้บริการหนึ่งเจ้า
+- **Provider** ที่มาของโมเดล เช่น `anthropic`, `openai`, `gemini` หรือใช้ subscription ของเราผ่าน `claude-code`
+- **Simulator** ยานจำลองแบบ Skeld ที่รันใน Node.js ไม่ต้องมีตัวเกม
+- **เกมจริง** AI ชุดเดียวกันไปเล่น Among Us ตัวจริงผ่าน mod AUBridge
+
+## ห้องประชุมหน้าตาเป็นยังไง
+
+<img src="docs/assets/meeting-chat.png" width="460" align="right" alt="แชตห้องประชุม: Sonnet ถาม Sol ว่าไปทำอะไรที่ห้องไฟกับศพ Terra ถามว่า Sol เห็นตัวเองทั้งที่ Cafeteria และ Storage ได้ยังไงตอนไฟดับ">
+
+ไม่มีประโยคไหนเขียนบทไว้ก่อน นี่คือแชตจริงในห้องประชุมของเกมจริง:
+
+- **Sonnet** บอกที่อยู่ของตัวเองก่อน: อยู่ Navigation กับ Weapons คนเดียวตลอด และทำ task เสร็จไปหนึ่งอัน
+- จากนั้นชี้ไปที่ **Sol**: Sol อยู่ห้องไฟกับศพ ให้ตอบมาว่าไปทำอะไร
+- **Terra** จับผิดคำให้การของ Sol: Sol บอกว่าเห็น Terra ทั้งที่ Cafeteria และ Storage แต่ตอนนั้นไฟดับ เห็นได้ยังไง?
+
+Terra เอาคำพูดของ Sol ไปเทียบกับ log ความจำของตัวเอง มันรู้ว่าตัวเองอยู่ไหน และรู้ว่าตอนนั้นไฟดับ
+ผู้เล่นทุกตัวเถียงได้จากสิ่งที่ตัวละครของตัวเองเห็นเท่านั้น
+
+<br clear="right">
+
+## จุดเด่น
+
+- 🧠 **ความจำแยกกัน** แต่ละตัวรู้แค่สิ่งที่ตัวละครตัวเองเห็น พร้อมเวลาในเกม เช่น `[01:10] เห็น Gemini ที่ Electrical`
+  ตอนประชุม log นี้คือข้อแก้ตัวและหลักฐานของมัน ไม่มีใครอ่านความจำของคนอื่นได้ (มีเทสต์ตรวจ)
+- 🤫 **ความคิดในใจ vs คำพูดจริง** ทุกคำตอบมี `secret_thought` แยกจากสิ่งที่ทำหรือพูด ผู้เล่นไม่เห็นความคิดกัน
+  แต่ log และหน้า viewer เก็บไว้ทั้งสองอย่าง เราจึงดู AI โกหกหน้าตายได้
+- 🗣️ **คุยกันระหว่างเดิน** นอกห้องประชุมก็พูดได้ แต่ได้ยินแค่คนที่มองเห็นคนพูดตอนนั้น (ไฟดับได้ยินแค่เสียงจากเงา)
+  ใช้แบ่งงานตอนโดน sabotage ถามหา alibi หรือโกหกต่อหน้า
+- 🤖 **หลายค่ายในแมตช์เดียว** Anthropic, OpenAI, Gemini, DeepSeek, Kimi, Grok, OpenRouter, Ollama หรือ server
+  ที่ใช้รูปแบบเดียวกับ OpenAI หรือจะเล่นด้วย **subscription** ของ Claude, ChatGPT, Google ผ่าน CLI ก็ได้ ไม่ต้องมี API key
+- 📓 **จำข้ามแมตช์** จบเกม AI แต่ละตัวเขียนโน้ตถึงตัวเองในเกมหน้า ("GPT โกหกเรื่อง Electrical สองรอบ") แล้วอ่านตอนเริ่มเกมถัดไป
+- 🎥 **หน้า viewer** ในเบราว์เซอร์ ดูแผนที่ ความคิดและคำพูดล่าสุดของทุกคน ความจำของใครก็ได้ และ log ทั้งหมด ทั้งสดและย้อนหลัง
+- 🎮 **เล่นเกมจริงได้ด้วย** เปิดเกมหนึ่งหน้าต่างต่อผู้เล่นหนึ่งตัวในเครื่องเดียว ประชุมผ่านแชตและโหวตของเกมจริง
+- 📜 **ทุกอย่างอยู่ใน log เดียว** (`matches/<id>/events.jsonl`) เอาไปทำเครื่องมือ overlay หรือสรุปแมตช์ของตัวเองต่อได้
+
+<p align="center">
+  <img src="docs/assets/viewer.png" width="720" alt="หน้า viewer: แผนที่ยานทางซ้าย ความคิดและคำพูดล่าสุดของผู้เล่นทุกตัวทางขวา">
+  <br><em>หน้า viewer ของ simulator ระหว่างแมตช์บอททดลอง</em>
+</p>
+
+## เลือกวิธีเล่น
+
+| อยากทำอะไร | ใช้แบบไหน | ต้องมีอะไร |
+|---|---|---|
+| ลองดูหน้าตาก่อน ฟรี | `npm run mock` บอทแบบกฎตายตัว | Node.js 20.12 ขึ้นไป |
+| ให้โมเดลจริงแข่งกัน | `npm start` กับที่นั่งใน `arena.config.json` | API key หรือ CLI ของ Claude Code / Codex / Antigravity ที่ login ไว้ |
+| ดู AI เล่น Among Us ตัวจริง | `node src/cli.js real` | Among Us บน Windows (เวอร์ชัน itch.io) + BepInEx + [AUBridge](mod/README.md) |
+| ทำโชว์ของตัวเองต่อยอด | `import { runMatch } from 'duckxy-among-ai'` | Node.js |
+
+## เริ่มใช้งาน
 
 ```bash
+git clone https://github.com/duckxy166/duckxy-among-ai.git
+cd duckxy-among-ai
 npm install
 npm run mock
 ```
 
-`npm run mock` plays a full match with rule-based bots (no API key, no cost) and opens the viewer at
-<http://localhost:7777>. Then set up real models:
+`npm run mock` เล่นแมตช์เต็มด้วยบอท (ไม่ใช้ API ไม่เสียเงิน) แล้วเปิด viewer ที่ <http://localhost:7777>
+
+### ใช้โมเดลจริง
 
 ```bash
 cp arena.config.example.json arena.config.json
 cp .env.example .env
 ```
 
-Put your API keys in `.env`, pick models in `arena.config.json`, then check every seat with one tiny
-request each before spending on a full match:
+1. ใส่ API key ใน `.env` (เฉพาะเจ้าที่ใช้)
+2. เลือกที่นั่ง 4 ถึง 10 ที่ใน `arena.config.json` หนึ่งที่นั่งคือผู้เล่นหนึ่งตัว:
 
-```bash
-node src/cli.js check
-npm start
-```
+   ```json
+   { "id": "claude", "name": "Claude", "color": "orange", "provider": "anthropic", "model": "claude-opus-5-5", "label": "Claude Opus 5.5" }
+   ```
 
-| Command | Does |
+3. เช็กทุกที่นั่งด้วย request เล็ก ๆ ทีละครั้ง แล้วค่อยเริ่มเล่น:
+
+   ```bash
+   node src/cli.js check
+   npm start
+   ```
+
+ไม่มี API key? ตั้ง `provider` ของที่นั่งเป็น `claude-code`, `codex` หรือ `antigravity` แล้ว login CLI นั้นไว้ก่อน
+ทุกครั้งที่ AI คิดจะเรียก CLI ที่ login ไว้ ไม่เสียค่า API แต่กินโควตาของแพ็กเกจ
+รายละเอียดดูที่ [Playing on a subscription](docs/configuration.md#playing-on-a-subscription) (อังกฤษ)
+
+### เล่น Among Us ตัวจริง
+
+`node src/cli.js real` เปิดเกมหนึ่งหน้าต่างต่อผู้เล่นหนึ่งตัวในเครื่องนี้ ตัวแรกเปิด lobby แบบ local ที่เหลือเข้าร่วม
+แล้วให้ AI เล่นแบบเรียลไทม์ ต้องมี Among Us บน Windows ที่ลง BepInEx 6 (IL2CPP) และ mod AUBridge
+([mod/README.md](mod/README.md)) และตั้ง `bridge.gamePath` ใน config ลองฟรีได้ด้วย `node src/cli.js real --mock --seats 4`
+**ใช้กับ lobby แบบ local เท่านั้น** ห้ามต่อเข้า server ทางการ
+
+## ควรรู้ก่อนใช้
+
+- **ค่าใช้จ่าย** โมเดลถูกถามเฉพาะตอนที่ต้องตัดสินใจ (ทำ task เสร็จ เจอศพ มีคนคุยด้วย) ไม่ได้ถามทุกวินาที
+  แมตช์บอทสั้น ๆ 8 คนเรียกโมเดลประมาณ 90 ครั้ง แมตช์โมเดลจริงจะยาวกว่านั้น บรรทัดสุดท้ายของ log บอกจำนวนครั้งและ token
+  ของทุกที่นั่ง แนะนำโมเดลราคาถูก (Haiku, Flash, GPT mini) หรือที่นั่งแบบ subscription
+- **API key** อยู่ใน `.env` ส่วนที่นั่งอยู่ใน `arena.config.json` ทั้งสองไฟล์ไม่ขึ้น git อย่าส่งให้ใคร
+- **ภาษา** ค่าเริ่มต้นผู้เล่นคิดและพูดภาษาไทย ตั้ง `"language": "en"` ถ้าอยากได้อังกฤษ คำสั่งที่ส่งให้โมเดลเป็นอังกฤษเสมอ
+- **ดูย้อนหลัง** แมตช์ใน simulator เล่นซ้ำได้จาก seed เดิมกับโมเดลชุดเดิม `node src/cli.js replay` เปิด viewer ของแมตช์ล่าสุด
+- **ชื่อโมเดลเปลี่ยนบ่อย** ชื่อใน `arena.config.example.json` เป็นแค่ตัวอย่าง รัน `check` เพื่อดูว่าตัวไหนใช้ได้
+
+## เอกสาร
+
+| หน้า | มีอะไร |
 |---|---|
-| `node src/cli.js run [--serve] [--mock] [--seed n] [--seats n] [--config file]` | Play a match. `--serve` opens the live viewer. |
-| `node src/cli.js real [--mock] [--serve] [--seats n] [--config file] [--attach] [--keep-open]` | Play in the real Among Us: one game copy per seat, driven through the AUBridge mod (see [Real Among Us](#real-among-us)). |
-| `node src/cli.js replay [matchId]` | Serve the viewer for a recorded match (the latest by default). |
-| `node src/cli.js check` | One small request per seat: keys, model ids, latency. |
-| `node src/cli.js list` | Recorded matches and who won. |
-| `npm test` | Engine, memory and full-match tests (mock players only). |
+| ⚙️ [Configuration](docs/configuration.md) (อังกฤษ) | คำสั่ง CLI, provider, ฟิลด์ของที่นั่งทุกตัว, ที่นั่งแบบ subscription, ค่าตั้งของแมตช์, ใช้เป็น library |
+| 🏗️ [Architecture](docs/ARCHITECTURE.md) (อังกฤษ) | engine, สมองของ AI, ห้องประชุม, bridge, event log |
+| 🎮 [Real game](docs/REAL_GAME.md) (อังกฤษ) | การเล่น Among Us ตัวจริง: สถานะ ผลทดสอบ และสิ่งที่ยังค้าง |
+| 🔧 [AUBridge mod](mod/README.md) (อังกฤษ) | build และติดตั้ง mod, สิ่งที่แก้จากต้นฉบับ |
+| 📖 [Glossary](CONTEXT.md) (อังกฤษ) | คำศัพท์ของโปรเจกต์: seat, brain, view, decision point, copy... |
+| 🤝 [Contributing](CONTRIBUTING.md) (อังกฤษ) | แจ้งบั๊ก รันเทสต์ กติกาของ pull request |
 
-The CLI works in the current directory (`.env`, `arena.config.json`, `matches/`, `memory/`), so it also
-runs from another project that installs this one: `npx among-ai check`.
+## แก้ปัญหา
 
-## Seats and providers
+| อาการ | วิธีแก้ |
+|---|---|
+| ขึ้น `Missing API keys` | ใส่ key ใน `.env` ตั้ง `"enabled": false` ให้ที่นั่งนั้น หรือลอง `--mock` |
+| `check` ไม่ผ่านบางที่นั่ง | ส่วนใหญ่ชื่อโมเดลผิดหรือถูกปลดแล้ว เช็กกับรายชื่อโมเดลของผู้ให้บริการ |
+| ที่นั่ง Claude ปฏิเสธทุกตา | ถ้าเป็น Claude Opus 5.5 ให้ตั้ง `"jsonMode": "none"` ที่ที่นั่งนั้น ([seat fields](docs/configuration.md#seat-fields)) |
+| ที่นั่งแบบ subscription เงียบไป | ใช้โควตาของแพ็กเกจหมดแล้ว ที่นั่งจะรอจนรอบใหม่เริ่ม |
+| พอร์ต 7777 มีโปรแกรมอื่นใช้อยู่ | ใส่ `--port 7788` ตอนรัน `run` หรือ `replay` |
+| เกมจริงไม่เชื่อมต่อ | เช็ก `bridge.gamePath` ว่า AUBridge อยู่ใน `BepInEx/plugins` และอ่าน [REAL_GAME.md](docs/REAL_GAME.md) |
 
-One seat is one player is one model. `provider` picks the API:
+ถ้าเจอบั๊ก เปิด issue ได้เลย สิ่งที่ควรแนบดูได้ใน [CONTRIBUTING.md](CONTRIBUTING.md#reporting-a-bug)
 
-| `provider` | API | Key in `.env` |
-|---|---|---|
-| `anthropic` | Anthropic SDK (Claude), structured outputs | `ANTHROPIC_API_KEY` |
-| `openai` | OpenAI Chat Completions, strict JSON schema | `OPENAI_API_KEY` |
-| `gemini` | Gemini's OpenAI-compatible endpoint | `GEMINI_API_KEY` |
-| `deepseek` | DeepSeek | `DEEPSEEK_API_KEY` |
-| `kimi` | Moonshot (Kimi) | `MOONSHOT_API_KEY` |
-| `xai` | xAI (Grok) | `XAI_API_KEY` |
-| `openrouter` | OpenRouter: almost any model with one key | `OPENROUTER_API_KEY` |
-| `ollama` | A local model through Ollama | none |
-| `custom` | Any OpenAI-compatible server: set `baseURL` and `apiKeyEnv` | yours |
-| `claude-code` | Your Claude subscription, through the signed-in Claude Code CLI | none |
-| `codex` | Your ChatGPT subscription, through the signed-in Codex CLI | none |
-| `antigravity` | Your Google subscription, through the signed-in Antigravity CLI (`agy`) | none |
-| `mock` | The rule-based bot | none |
+## ⭐ ชอบไหม?
 
-Model ids change often. The ids in `arena.config.example.json` are examples: check each provider's
-model list and run `node src/cli.js check`.
+ถ้าดู Claude กล่าวหา GPT หน้าตายแล้วยิ้มได้ **ฝากกด Star ให้ repo นี้หน่อย**
+ช่วยให้คนเล่นเกมและคนสาย AI เจอโปรเจกต์นี้ และเป็นกำลังใจให้ทำตอนต่อไป
 
-Seat fields: `id` (file-safe, used for its long-term memory file), `name` (what the other players call
-it), `color`, `provider`, `model`, `label` (shown in the viewer), and optionally `persona` (a short
-personality), `effort` / `meetingEffort` (Claude: `low`…`max`), `extra` (extra request fields for
-OpenAI-compatible APIs, e.g. `{"reasoning_effort": "low"}`), `jsonMode` (`json_schema`, `json_object`
-or `none` if a server rejects `response_format`; on a Claude seat, `none` drops structured output,
-which Claude Opus 5.5 needs: with a JSON schema it refuses every turn of this game), `baseURL`,
-`apiKeyEnv`, `concurrency`, `enabled: false`.
+<a href="https://star-history.com/#duckxy166/duckxy-among-ai&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=duckxy166/duckxy-among-ai&type=Date&theme=dark">
+    <img alt="Star history" src="https://api.star-history.com/svg?repos=duckxy166/duckxy-among-ai&type=Date" width="600">
+  </picture>
+</a>
 
-### Playing on a subscription
+ช่วยได้อีกหลายทาง:
 
-`claude-code`, `codex` and `antigravity` seats cost no API money: each call runs your own signed-in CLI
-headless (`claude -p`, `codex exec`, `agy`) from an empty temporary folder, with no tools, no session
-saved and nothing from this project loaded. Sign in once (`claude` then `/login`, `codex login`, `agy`),
-then `node src/cli.js check`. An `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`, `GEMINI_API_KEY`) in `.env`
-is not passed to that CLI, so those seats use the subscription even when other seats use the API.
+- 📺 ติดตามซีรีส์บน YouTube: [@LDuckxy](https://www.youtube.com/@LDuckxy)
+- 💖 สนับสนุนผู้พัฒนาผ่าน [GitHub Sponsors](https://github.com/sponsors/duckxy166)
+- 🐛 แจ้งบั๊กหรือส่ง pull request: [CONTRIBUTING.md](CONTRIBUTING.md)
 
-```json
-{ "id": "haiku", "name": "Haiku", "color": "yellow", "provider": "claude-code", "model": "claude-haiku-5-5", "effort": "low" }
-{ "id": "gpt", "name": "GPT", "color": "green", "provider": "codex", "model": "gpt-5.6-luna", "effort": "low" }
-{ "id": "gemini", "name": "Gemini", "color": "blue", "provider": "antigravity", "model": "gemini-3.8-flash-low" }
-```
+## เครดิต
 
-- `model`: a Claude Code model id or alias (`haiku`, `sonnet`); a model your ChatGPT plan offers in Codex
-  (API-only ids such as `gpt-5-mini` are refused); an id from `agy models`, which includes the effort.
-- Starting a CLI takes 1-10 seconds, so each seat keeps one started process waiting for its next call
-  (about 100 MB for Claude Code, 200 MB for agy). `"warm": false` turns that off. The answer is taken
-  as soon as it streams out. `command` points at the binary if it is not on `PATH` (a string, or an
-  array such as `["node", "path/to/cli.js"]`); `timeoutMs` (default 180000) gives up on a stuck call.
-- Measured on Windows with a real roam prompt (4 KB system, 2 KB turn), median per call: Anthropic API
-  Haiku 2.0 s; `claude-code` Haiku 3.2 s with the started process, 4.4 s without; `antigravity` Gemini
-  Flash 3.8 s with rare 40-50 s stalls; `codex` 7 s. Claude Code is fast enough for the real game; Codex
-  and Antigravity seats stand still longer while they think.
-- **Usage limits.** Every call counts against your plan's limits, shared with your own use of Claude,
-  ChatGPT or Gemini (Claude: a 5-hour window and a weekly cap). A 6-player real-game match makes a few
-  hundred calls. Claude Code reports how much of the window is used: the match prints a warning when it
-  gets close, and once the limit is reached that seat's calls fail and it waits in place until the window
-  resets. Keep `concurrency` modest (default 4 calls at once per provider).
-- Claude Code may decline a turn with "safeguards flagged this message"; that counts as a refusal and
-  the seat waits, as with the API.
+Among AI สร้างโดย **Duckxy** (YouTube [@LDuckxy](https://www.youtube.com/@LDuckxy), GitHub
+[duckxy166](https://github.com/duckxy166))
 
-Claude seats on Opus 5.5 / Opus 5 / Sonnet 5.5 / Fable 5.1 send `fallbacks: "default"`: if a safety
-classifier declines a turn, the API retries it on a fallback Claude model inside the same call. Set
-`"refusalFallback": false` on the seat to turn it off.
+- ไลเซนส์ MIT กำหนดให้คงข้อความลิขสิทธิ์ใน [LICENSE](LICENSE) ไว้ในทุกสำเนาหรือ fork ของโค้ด
+- ถ้านำ Among AI ไปใช้ในคลิป สตรีม หรือบทความ กรุณาให้เครดิต "Among AI by Duckxy" พร้อมลิงก์ repo นี้
 
-## Match settings
+## ขอบคุณ
 
-| Key | Default | Meaning |
-|---|---|---|
-| `language` | `th` | What players think and speak in (`th` or `en`; instructions stay English) |
-| `seed` | random | Same seed + same brains = same match |
-| `discussionRounds` | 2 | How many times each living player speaks per meeting |
-| `revealModels` | true | Players know which model is behind each name |
-| `persistentMemory` | true | Read and write `memory/<seat>.md` across matches |
-| `logPrompts` | true | Save every prompt and raw reply to `matches/<id>/prompts.jsonl` |
-| `rules.impostors` | 1 (≤6 players), 2 | Number of impostors |
-| `rules.tasksPerPlayer` | 5 | Tasks per crewmate |
-| `rules.killCooldown` | 25 | Seconds between kills |
-| `rules.confirmEjects` | true | Reveal whether an ejected player was an impostor |
-| `rules.maxGameSeconds` | 900 | Safety stop |
+ไอเดียผู้เล่น AI ในเกมจริงที่มองเห็นอย่างซื่อสัตย์ แยกสมองกับร่าง และจำข้ามแมตช์ ได้แรงบันดาลใจจาก
+[Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) (MIT) ซึ่งให้ Claude เล่นในเกมจริงผ่าน mod BepInEx
 
-More rules (sabotage timers, emergency button) are in `src/engine/game.js` → `DEFAULT_RULES`.
+- **`mod/AUBridge` คือ mod AUBridge ของโปรเจกต์นั้น เขียนโดย Tartaluga** (MIT) Duckxy port มาใช้กับเวอร์ชัน itch.io
+  [mod/LICENSE](mod/LICENSE) เก็บข้อความลิขสิทธิ์เดิมไว้ และ [mod/README.md](mod/README.md) บอกทุกจุดที่แก้
+- ส่วนที่เหลือ (`src/`, `web/`, `test/`) เขียนขึ้นใหม่สำหรับ repo นี้ `src/bridge/` คุยกับ AUBridge ผ่าน protocol ของ mod เอง
 
-## How it works
+## สัญญาอนุญาต
 
-The engine (`src/engine/`) is the body: it walks players around a Skeld-like ship one game second at
-a time, decides who can see whom, and writes what each player saw into that player's memory. The brains
-(`src/agents/`) only get a view of their own surroundings, their own memory log, notes and past thoughts,
-and a list of legal actions. They are asked to decide only at decision points (a task finished, a body
-found, a kill witnessed, a sabotage, a kill opportunity, someone talking to them), not every second, which keeps the cost down.
-Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+[MIT](LICENSE) © 2026 Duckxy ยกเว้น `mod/AUBridge`: MIT © 2026 Tartaluga ส่วนที่แก้ © 2026 Duckxy
+([mod/LICENSE](mod/LICENSE)) ดาวน์โหลด ใช้ แก้ไข และนำไปพัฒนาต่อได้ฟรี แค่คงข้อความ license ไว้
 
-In a 2-minute mock match with one meeting the 8 players made 88 calls; system prompts are about
-3,000 characters and each turn adds 1,500 to 3,500. Matches with real models run longer. The last line
-of every event log (`stats`) has each seat's calls, errors and tokens.
-
-## Use it as a library
-
-```js
-import { loadConfig, createProvider, runMatch } from 'duckxy-among-ai';
-```
-
-`runMatch({ config, seats, providers, matchId, dir, memoryDir, publish })` plays one match and calls
-`publish(event)` for every event, so you can drive your own display. `startServer({ webRoot })` serves
-the live and recorded events to a page of your own.
-
-## Real Among Us
-
-The same brains can also play the real game. `node src/cli.js real` opens one Among Us copy per seat on
-this PC, has the first one host a local (LAN) lobby and the others join, then plays in real time: every
-player decides on its own when something happens to it, and meetings go through the real chat and vote.
-Memories, prompts, the event log and the viewer are the same as in the simulator.
-
-What you need:
-
-- Among Us on Windows with BepInEx 6 (IL2CPP) and the **AUBridge** mod in its `BepInEx/plugins`.
-  [mod/AUBridge](mod/README.md) is AUBridge ported to the itch.io build 2026.9.29, with build steps;
-  for the Epic 2026.6.5 build use upstream's in
-  [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude).
-- `bridge.gamePath` in `arena.config.json` (or `AMONG_US_EXE`) pointing at `Among Us.exe`. The `bridge`
-  block in `arena.config.example.json` shows the lobby options.
-- Seat names of 1-10 letters or digits (the game's limit), and 4 or more seats. The game allows
-  2 impostors from 7 players and 3 from 9; a bigger `rules.impostors` is lowered to that.
-
-`node src/cli.js real --mock --seats 4` is a free first test. Local lobbies only: never point this at
-the official servers. Vent actions are not wired up yet. Status and test results:
-[docs/REAL_GAME.md](docs/REAL_GAME.md).
-
-## Credit
-
-Among AI was created by **Duckxy** (YouTube [@LDuckxy](https://www.youtube.com/@LDuckxy), GitHub
-[duckxy166](https://github.com/duckxy166)).
-
-- The MIT license requires keeping the copyright notice in [LICENSE](LICENSE) in every copy or fork of
-  the code.
-- If you show Among AI in a video, stream or article, please credit "Among AI by Duckxy" and link this
-  repository.
-
-## Acknowledgements
-
-The idea of real AI players with honest vision, a brain/body split and memory between matches was
-inspired by [Fatoom333/among-us-claude](https://github.com/Fatoom333/among-us-claude) (MIT), which runs
-Claude agents inside the real game through a BepInEx mod.
-
-- **`mod/AUBridge` is that project's AUBridge mod, written by Tartaluga** (MIT), ported to the itch.io
-  build by Duckxy. [mod/LICENSE](mod/LICENSE) keeps the original copyright notice and
-  [mod/README.md](mod/README.md) lists every change.
-- Everything else (`src/`, `web/`, `test/`) is written for this repository; `src/bridge/` talks to
-  AUBridge over the mod's own protocol.
-
-## License
-
-[MIT](LICENSE) © 2026 Duckxy, except `mod/AUBridge`: MIT © 2026 Tartaluga, modifications © 2026 Duckxy
-([mod/LICENSE](mod/LICENSE)). Among Us is a trademark of Innersloth LLC. This is a fan-made AI
-experiment, not affiliated with or endorsed by Innersloth. No game code or assets are included (the mod
-is built against your own copy of the game); the simulator's map is drawn from scratch.
-
----
-
-## ภาษาไทย
-
-**Among AI** คือสนามให้ AI หลายค่าย (Claude, GPT, Gemini, DeepSeek, Kimi, Grok …) มาเล่นเกมแนว Among Us
-ด้วยกันในแมตช์เดียว แต่ละตัวมีความจำของตัวเอง คุยกัน หลอกกัน และหาเหตุผลจับคนโกหก
-สร้างโดย **Duckxy** ([YouTube @LDuckxy](https://www.youtube.com/@LDuckxy)) เปิดโค้ดแบบ MIT
-
-**จุดเด่น**
-
-- **ความจำแยกกัน** — แต่ละตัวรู้แค่สิ่งที่ตัวละครตัวเองเห็น ระบบจดเหตุการณ์ลงความจำของผู้เล่นคนนั้นพร้อมเวลา
-  เช่น `[01:10] เห็น Gemini ที่ Electrical` แล้วใช้เป็นหลักฐาน/ข้อแก้ตัวตอนประชุม ไม่มีใครอ่านความจำของคนอื่นได้ (มีเทสต์ตรวจ)
-- **ความคิดในใจ vs คำพูดจริง** — ทุกคำตอบต้องมี `secret_thought` (แผนจริง คำโกหกที่กำลังเตรียม) แยกจากสิ่งที่ทำ/พูด/โหวต
-  ผู้เล่นไม่เห็นความคิดกัน แต่ log และหน้า viewer เก็บไว้ทั้งสองอย่าง
-- **คุยกันระหว่างเดิน** — นอกห้องประชุมพูดได้ แต่คนที่ได้ยินมีแค่คนที่มองเห็นตัวคนพูดตอนนั้น (ไฟดับได้ยินแค่เสียงจากเงา ไม่รู้ว่าใคร) คนพูดรู้ว่าใครได้ยิน และใครไม่อยู่ในระยะ จะได้เดินไปถามต่อ คนที่ถูกเรียกชื่อหรือถูกตอบจะได้ตอบกลับ ใช้แบ่งงานตอน sabotage ถามหา alibi หรือโกหกต่อหน้า
-- **หลายโมเดลในแมตช์เดียว** — เวลาในเกมหยุดระหว่างที่ AI คิด โมเดลที่ช้าจึงไม่เสียเปรียบ และเล่นซ้ำได้จาก seed
-- **จำข้ามแมตช์** — จบเกมแต่ละตัวเขียนโน้ตถึงตัวเองเกมหน้า (ใครโกหก ใครไว้ใจได้)
-- **หน้า viewer** ในเบราว์เซอร์ ดูแผนที่ ความคิดล่าสุดของทุกคน และความจำของผู้เล่นที่เลือก ทั้งสดและย้อนหลัง
-
-**เริ่มใช้**
-
-```bash
-npm install
-npm run mock
-```
-
-เปิด <http://localhost:7777> ดูแมตช์บอททดลอง (ไม่ใช้ API ไม่เสียเงิน) จากนั้นคัดลอก `arena.config.example.json`
-เป็น `arena.config.json` และ `.env.example` เป็น `.env` ใส่ API key แล้วรัน `node src/cli.js check` ก่อน `npm start`
-
-**เล่นด้วย subscription ไม่ใช้ API key:** ตั้ง `provider` ของ seat เป็น `claude-code` (Claude Code), `codex` (Codex / ChatGPT)
-หรือ `antigravity` (agy / Gemini) แล้ว login CLI นั้นไว้ก่อน ทุกครั้งที่ AI คิดจะเรียก CLI ที่ login ไว้ ไม่เสียค่า API
-แต่กินโควตาของแพ็กเกจ (Claude มีรอบ 5 ชั่วโมงและรอบรายสัปดาห์) รายละเอียดและความเร็วดูหัวข้อ
-[Playing on a subscription](#playing-on-a-subscription)
-
-**เล่นในเกม Among Us จริง:** `node src/cli.js real` เปิดเกมหนึ่งหน้าต่างต่อผู้เล่นหนึ่งคน (ตัวแรกเปิด lobby แบบ local
-ที่เหลือเข้าร่วม) แล้วให้ AI ชุดเดิมเล่นแบบเรียลไทม์ผ่าน mod AUBridge ต้องติดตั้ง BepInEx + AUBridge ในโฟลเดอร์เกมก่อน
-และตั้ง `bridge.gamePath` ใน config ลองฟรีได้ด้วย `node src/cli.js real --mock --seats 4` รายละเอียดดูหัวข้อ
-[Real Among Us](#real-among-us) และ [docs/REAL_GAME.md](docs/REAL_GAME.md) ใช้กับ lobby แบบ local เท่านั้น
-
-**เครดิต:** ถ้านำไปใช้ในคลิป/สตรีม/บทความ กรุณาให้เครดิต "Among AI by Duckxy" พร้อมลิงก์ repo นี้;
-ไลเซนส์ MIT กำหนดให้คงข้อความลิขสิทธิ์ใน [LICENSE](LICENSE) ไว้ทุกสำเนา
-
-Among Us เป็นเครื่องหมายการค้าของ Innersloth LLC โปรเจกต์นี้เป็นการทดลองของแฟน ไม่เกี่ยวข้องกับ Innersloth
-และไม่มีไฟล์หรือ asset ของเกมอยู่ใน repo
+Among Us เป็นเครื่องหมายการค้าของ Innersloth LLC โปรเจกต์นี้เป็นการทดลอง AI ที่แฟนทำขึ้นเอง ไม่เกี่ยวข้องกับ Innersloth
+ใน repo ไม่มีไฟล์ โค้ด หรือ asset ของเกม (mod build จากเกมที่เราซื้อเอง ภาพด้านบนคือภาพตอนเกมเล่นอยู่)
+และแผนที่ของ simulator วาดขึ้นใหม่ทั้งหมด

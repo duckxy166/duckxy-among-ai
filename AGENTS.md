@@ -1,7 +1,8 @@
 # Agent instructions
 
 For coding agents working on Among AI (Claude Code, Codex, Antigravity, Jules and the like).
-How it works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+How it works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Words: [CONTEXT.md](CONTEXT.md). Which doc to
+update with a change: [CONTRIBUTING.md](CONTRIBUTING.md#keep-the-docs-in-step).
 
 This repository is the game and its AI players only. Video production around it (OBS overlays,
 recording, editing summaries, channel personas) lives in a separate private project that installs this
@@ -33,9 +34,9 @@ node src/cli.js replay              # then open http://localhost:7777 to look at
   its own game copy (`state` and events of that copy). It is real time, so it is not deterministic; the
   seed only replays simulator matches. `test/fake-bridge.js` stands in for the mod in tests: when you
   change what the bridge expects from AUBridge, change the fake the same way.
-- **Credit.** Keep the copyright line in `LICENSE`, the Credit section of the README and the credit in
+- **Credit.** Keep the copyright line in `LICENSE`, the Credit section of both READMEs and the credit in
   the viewer footer. `mod/AUBridge` is upstream code (MIT, © Tartaluga): keep `mod/LICENSE`, the credit
-  in `mod/README.md` and the README's Acknowledgements, and add every change you make to the mod to the
+  in `mod/README.md` and the READMEs' Acknowledgements, and add every change you make to the mod to the
   "Changes from upstream" table in `mod/README.md`.
 - No game files, assets or code from Among Us; no API keys, `.env`, `arena.config.json`, `matches/` or
   `memory/*.md` in git. The mod builds against `mod/refs/` (BepInEx and interop assemblies made from the

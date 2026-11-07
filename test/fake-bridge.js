@@ -87,7 +87,7 @@ export async function startFakeShip({
 
   function startMeeting(caller, body) {
     ship.phase = 'meeting';
-    ship.meeting = { caller: caller.name, body, votes: new Map() };
+    ship.meeting = { caller: caller.name, body, votes: new Map(), refused: new Set() };
     ship.bodies = [];
     all('meeting_started', { caller: caller.name, body });
     setTimeout(() => {
@@ -103,7 +103,9 @@ export async function startFakeShip({
   function resolveVotes(timeUp = false) {
     const m = ship.meeting;
     const living = players.filter((p) => p.alive);
-    if (!timeUp && !living.every((p) => m.votes.has(p.name) || abstain.includes(p.name))) return;
+    // An abstaining copy holds voting open until it has tried and been refused, as a real player who has
+    // not voted would; closing earlier races that copy's attempt against the results screen.
+    if (!timeUp && !living.every((p) => m.votes.has(p.name) || m.refused.has(p.name))) return;
     clearTimeout(m.timer);
     const tally = {};
     let skip = 0;
@@ -205,7 +207,11 @@ export async function startFakeShip({
         return ok();
       case 'vote':
         if (ship.phase !== 'voting' || !ship.meeting) return err('voting is not open yet');
-        if (abstain.includes(p.name)) return err('this copy refuses to vote');
+        if (abstain.includes(p.name)) {
+          ship.meeting.refused.add(p.name);
+          later(() => { if (ship.meeting) resolveVotes(); });
+          return err('this copy refuses to vote');
+        }
         if (ship.meeting.votes.has(p.name)) return err('already voted');
         if (busyVote.includes(p.name)) {
           const m = ship.meeting;
